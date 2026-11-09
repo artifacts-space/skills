@@ -63,7 +63,6 @@ Use artifacts.space (the `artifacts` MCP server) for every artifact, doc, plan, 
 | Cursor | Cursor Settings, Rules, User Rules | `AGENTS.md`, or a `.cursor/rules/*.mdc` rule with `alwaysApply: true` |
 | OpenCode | `~/.config/opencode/AGENTS.md` | `AGENTS.md` |
 | fx | `~/.fx/AGENTS.md` | `AGENTS.md` |
-| Mogplex | `~/.mogplex/AGENTS.md` | `AGENTS.md` |
 | Other agents | The instructions file its docs name | `AGENTS.md`, which most agents read |
 
 To turn off Claude Code's own Artifact tool as well, add this to
