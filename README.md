@@ -53,7 +53,7 @@ tool in Claude Code. To have your agent save to artifacts.space every time,
 add this line to its instructions:
 
 ```text
-Use artifacts.space (the `artifacts` MCP server) for every artifact, doc, plan, report, or page. Do not use a built-in artifact tool unless I name it.
+Use artifacts.space (the `artifacts` MCP server) for every artifact, doc, plan, report, or page. Do not use any built-in artifact or document tool unless I name it.
 ```
 
 | Agent | Every project | One project |
