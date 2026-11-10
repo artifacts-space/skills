@@ -89,8 +89,28 @@ function chatGptExport(folder) {
         n4: message("n4", "n3", "assistant", "canmore.update_textdoc", JSON.stringify({ updates: [{ pattern: "great", replacement: "wonderful", multiple: false }] })),
       },
     },
+    {
+      id: "conv-2",
+      title: "Script help",
+      create_time: 1_735_100_000,
+      mapping: {
+        root: { id: "root", parent: null, message: null },
+        n5: message("n5", "root", "assistant", "canmore.create_textdoc", JSON.stringify({ name: "Counter", type: "code/python", content: "count = 1\ncount = 1\n" })),
+        n6: message("n6", "n5", "assistant", "canmore.update_textdoc", JSON.stringify({ updates: [{ pattern: "count = (\\d)", replacement: "total = \\1", multiple: true }] })),
+        n7: message("n7", "n6", "assistant", "canmore.update_textdoc", JSON.stringify({ updates: [{ pattern: "([", replacement: "x" }] })),
+        n8: message("n8", "root", "assistant", "canmore.create_textdoc", JSON.stringify({ name: "Rewritten", type: "document", content: "First draft" })),
+        n9: message("n9", "n8", "assistant", "canmore.update_textdoc", JSON.stringify({ updates: [{ pattern: ".*", replacement: "Second draft", multiple: true }] })),
+      },
+    },
     {},
   ]);
+  write(join(folder, "library_files.json"), [
+    { file_id: "file_abc", file_name: "Market report", mime_type: "text/markdown", library_artifact_type: "report", created_at: "2026-01-02T00:00:00Z" },
+    { file_id: "file_old", file_name: "Deleted report", mime_type: "text/markdown", library_artifact_type: "report", deleted_at: "2026-01-03T00:00:00Z" },
+    { file_id: "file_up", file_name: "upload.png", mime_type: "image/png", library_artifact_type: null },
+  ]);
+  write(join(folder, "file_abc-report.md"), "# Market report\n");
+  write(join(folder, "file_old-report.md"), "# Deleted\n");
 }
 
 before(() => {
@@ -129,6 +149,49 @@ describe("inventory scan", () => {
     assert.equal(byTitle["notes"].format.kind, "text");
     assert.ok(skipped.some((entry) => entry.path === ".env"));
     assert.ok(!items.some((item) => item.title === "Not mine"));
+  });
+
+  it("should replay canvas edits on the active branch and read library reports", () => {
+    const out = join(root, "out-9");
+    run("scan", "--out", out, "--source", join(root, "chatgpt"), "--account", "personal");
+    const byTitle = Object.fromEntries(inventory(out).items.map((item) => [item.title, item]));
+    // conv-2 has no current_node, so the newest message (n9) picks the branch: only "Rewritten" is on it.
+    assert.equal(readFileSync(join(out, byTitle["Rewritten"].path), "utf8"), "Second draft");
+    assert.equal(byTitle["Counter"], undefined);
+    assert.equal(byTitle["Market report"].type, "chatgpt-report");
+    assert.equal(byTitle["Deleted report"], undefined);
+    assert.equal(byTitle["upload.png"], undefined);
+  });
+
+  it("should replay grouped regex edits and flag edits it cannot replay", () => {
+    const folder = join(root, "chatgpt-code");
+    write(join(folder, "user.json"), { id: "user-test" });
+    write(join(folder, "conversations.json"), [
+      {
+        id: "conv-3",
+        title: "Code",
+        current_node: "c3",
+        mapping: {
+          root: { id: "root", parent: null, message: null },
+          c1: { id: "c1", parent: "root", message: { author: { role: "assistant" }, recipient: "canmore.create_textdoc", create_time: 1, content: { parts: [JSON.stringify({ name: "Counter", type: "code/python", content: "count = 1\ncount = 2\n" })] } } },
+          c2: { id: "c2", parent: "c1", message: { author: { role: "assistant" }, recipient: "canmore.update_textdoc", create_time: 2, content: { parts: [JSON.stringify({ updates: [{ pattern: "count = (\\d)", replacement: "total = \\1", multiple: true }] })] } } },
+          c3: { id: "c3", parent: "c2", message: { author: { role: "assistant" }, recipient: "canmore.update_textdoc", create_time: 3, content: { parts: [JSON.stringify({ updates: [{ pattern: "([", replacement: "x" }] })] } } },
+        },
+      },
+    ]);
+    const out = join(root, "out-10");
+    run("scan", "--out", out, "--source", folder);
+    const [item] = inventory(out).items;
+    assert.deepEqual(item.format, { kind: "code", language: "python" });
+    assert.equal(readFileSync(join(out, item.path), "utf8"), "total = 1\ntotal = 2\n");
+    assert.ok(item.notes.some((note) => /could not be replayed/.test(note)));
+  });
+
+  it("should stop with a message when an export file is cut short", () => {
+    const folder = join(root, "chatgpt-truncated");
+    write(join(folder, "user.json"), { id: "user-test" });
+    write(join(folder, "conversations-000.json"), '[{"id": "conv"');
+    assert.throws(() => run("scan", "--out", join(root, "out-11"), "--source", folder), /not complete JSON/);
   });
 
   it("should never copy account emails into the inventory", () => {

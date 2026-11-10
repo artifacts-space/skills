@@ -118,7 +118,14 @@ function findFiles(root, test, depth = 3) {
   return found.sort();
 }
 
-const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
+/** Reads a JSON file, or stops with a message when an export file is cut short or unreadable. */
+function readJson(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    return fail(`could not read ${path} (${error instanceof SyntaxError ? "not complete JSON" : "unreadable"}). Download and unzip that export again.`);
+  }
+}
 
 /** Each secret finding: its rule, line, and a masked preview that never shows the value. */
 function scanSecrets(text) {
@@ -357,7 +364,12 @@ function readChatGptExport(root, source, shards) {
 function chatGptReports(root, source) {
   const library = findFiles(root, (name) => /^library[-_]files\.json$/i.test(name))[0];
   if (!library) return [];
-  const files = readdirSync(dirname(library));
+  let files;
+  try {
+    files = readdirSync(dirname(library));
+  } catch {
+    return [];
+  }
   const reports = [];
   for (const entry of readJson(library)) {
     if (entry?.library_artifact_type !== "report" || entry.trashed_at || entry.deleted_at || !entry.file_id) continue;
@@ -375,13 +387,18 @@ function chatGptReports(root, source) {
       notes: ["Found in the ChatGPT library; this export layout is not documented by OpenAI"],
       source,
     };
-    if (textual) reports.push({ ...base, content: readFileSync(path, "utf8"), format: { kind: "markdown" } });
+    if (textual) {
+      try {
+        reports.push({ ...base, content: readFileSync(path, "utf8"), format: { kind: "markdown" } });
+      } catch {
+        // An unreadable report file is left out; the rest of the export still counts.
+      }
+    }
     else reports.push({ ...base, filePath: path, contentType: entry.mime_type ?? "application/octet-stream", format: { kind: "file" } });
   }
   return reports;
 }
 
-/** The repository folder name above a file, for a project suggestion. */
 /**
  * The repository folder name above a file, for a project suggestion. It may
  * look above the source (a docs/ folder inside a repository), but stops
