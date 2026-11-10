@@ -774,16 +774,17 @@ function readdirSafe(folder) {
 // ---------- Document folders ----------
 
 /**
- * The repository folder name above a file, for a project suggestion. It may
- * look above the source (a docs/ folder inside a repository), but stops
- * below the home folder, so a dotfiles repository there never counts.
+ * The repository folder name above a file, for a project suggestion. It looks
+ * only inside the source folder (the source itself included), so a .git in a
+ * parent folder such as the home folder never names a project.
  */
-function repositoryName(path) {
-  const home = homedir();
+function repositoryName(path, root) {
   let folder = dirname(path);
-  while (folder !== home && dirname(folder) !== folder) {
+  while (isInsideAsWritten(folder, root)) {
     if (existsSync(join(folder, ".git"))) return basename(folder);
-    folder = dirname(folder);
+    const parent = dirname(folder);
+    if (parent === folder) break;
+    folder = parent;
   }
   return null;
 }
@@ -867,7 +868,7 @@ function readDocuments(root, source) {
         originalUrl: null,
         originalPath: path,
         conversationTitle: "",
-        suggestedProject: repositoryName(path),
+        suggestedProject: repositoryName(path, root),
         notes: [],
         source,
       };

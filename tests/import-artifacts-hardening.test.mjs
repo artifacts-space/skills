@@ -47,26 +47,77 @@ before(() => {
 });
 after(() => rmSync(root, { recursive: true, force: true }));
 
-describe("1. secret scan speed", () => {
-  const size = 500_000;
-  const inputs = {
-    "dash runs": "a-".repeat(size / 2),
-    "SVG path data": `<svg><path d="${"M10.5-20.3L30-40c1.2-3.4 5.6-7.8 9-1z".repeat(size / 36)}"/></svg>`,
-    base64url: "eyJhbGciOi-_".repeat(size / 12),
-    "keyword runs": "password token secret api_key ".repeat(size / 30),
-    "scheme runs": "http://a:b".repeat(size / 10),
+/** Positions of unbounded quantifiers (`*`, `+`, `{n,}`) in a regex source, outside escapes and character classes. */
+function unboundedQuantifiers(source) {
+  const found = [];
+  let inClass = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "\\") {
+      index += 1;
+      continue;
+    }
+    if (inClass) {
+      if (char === "]") inClass = false;
+      continue;
+    }
+    if (char === "[") inClass = true;
+    else if (char === "*" || char === "+") found.push(index);
+    else if (char === "{" && /^\{\d+,\}/.test(source.slice(index))) found.push(index);
+  }
+  return found;
+}
+
+/** The median time of `runs` calls, after one warm-up call. */
+function medianTime(work, runs = 5) {
+  work();
+  const times = [];
+  for (let run = 0; run < runs; run += 1) {
+    const started = performance.now();
+    work();
+    times.push(performance.now() - started);
+  }
+  return times.sort((a, b) => a - b)[Math.floor(runs / 2)];
+}
+
+describe("secret scan speed", () => {
+  it("should bound every quantifier in every secret rule", () => {
+    for (const { name, pattern } of SECRET_RULES) assert.deepEqual(unboundedQuantifiers(pattern.source), [], `${name}: ${pattern.source}`);
+  });
+
+  it("should spot an unbounded quantifier", () => {
+    assert.deepEqual(unboundedQuantifiers(String.raw`a+[*+]\*b{2,}c{1,4}`), [1, 9]);
+  });
+
+  // A scaling check, not a time budget: four times the input should take about
+  // four times as long. Backtracking that grows with the square of a run would
+  // take about sixteen times as long, so a bound of ten catches it on any machine.
+  const unit = 100_000;
+  const units = {
+    "dash runs": "a-",
+    "SVG path data": "M10.5-20.3L30-40c1.2-3.4 5.6-7.8 9-1z",
+    base64url: "eyJhbGciOi-_",
+    "keyword runs": "password token secret api_key ",
+    "scheme runs": "http://a:b",
   };
-  for (const [name, text] of Object.entries(inputs)) {
-    it(`should scan and redact 500 KB of ${name} in under a second`, () => {
-      const started = performance.now();
-      scanSecrets(text);
-      redactText(text);
-      assert.ok(performance.now() - started < 1000, `${name} took ${Math.round(performance.now() - started)} ms`);
+  for (const [name, piece] of Object.entries(units)) {
+    it(`should scan and redact ${name} in time that grows linearly`, (t) => {
+      const text = (length) => piece.repeat(Math.ceil(length / piece.length)).slice(0, length);
+      const small = text(unit);
+      const large = text(unit * 4);
+      const work = (input) => () => {
+        scanSecrets(input);
+        redactText(input);
+      };
+      const smallTime = medianTime(work(small));
+      const largeTime = medianTime(work(large));
+      t.diagnostic(`${name}: ${smallTime.toFixed(1)} ms for 100 KB, ${largeTime.toFixed(1)} ms for 400 KB`);
+      assert.ok(largeTime < 10 * Math.max(smallTime, 0.5), `${name}: ${smallTime.toFixed(1)} ms then ${largeTime.toFixed(1)} ms`);
     });
   }
 });
 
-describe("2. canvas edits", () => {
+describe("canvas edits", () => {
   it("should drop an edit for an unreadable or unknown canvas instead of rewriting the current one", () => {
     const source = folder("canvas-routing");
     write(join(source, "user.json"), { id: "user-test" });
@@ -115,7 +166,7 @@ describe("2. canvas edits", () => {
   });
 });
 
-describe("3. several exports in one source", () => {
+describe("several exports in one source", () => {
   it("should refuse the source and name each export folder", () => {
     const source = folder("two-exports");
     write(join(source, "personal", "users.json"), []);
@@ -139,7 +190,7 @@ describe("3. several exports in one source", () => {
   });
 });
 
-describe("4. re-running into the same --out", () => {
+describe("re-running into the same --out", () => {
   it("should keep a redaction when the scan runs again", () => {
     const source = folder("rerun");
     write(join(source, "plan.md"), `# Plan\n\nAPI_KEY=${filler(24)}\n`);
@@ -162,7 +213,7 @@ describe("4. re-running into the same --out", () => {
   });
 });
 
-describe("5. secret rules", () => {
+describe("secret rules", () => {
   const cases = {
     "private-key": ["-----BEGIN OPENSSH PRIVATE KEY-----\n", `${filler(64, "QUJD")}\n-----END OPENSSH PRIVATE KEY-----`],
     "pgp-private-key": ["-----BEGIN PGP PRIVATE KEY BLOCK-----\n\n", `${filler(64, "QUJD")}\n${filler(40, "RUZH")}`],
@@ -227,7 +278,7 @@ describe("5. secret rules", () => {
   });
 });
 
-describe("6. coding-agent home folders", () => {
+describe("coding-agent home folders", () => {
   it("should read only plans/ inside ~/.claude", () => {
     const home = folder("home");
     const claude = join(home, ".claude");
@@ -253,7 +304,7 @@ describe("6. coding-agent home folders", () => {
   });
 });
 
-describe("7. huge exports", () => {
+describe("huge exports", () => {
   it("should say an oversized conversations.json is too large instead of asking for a new download", () => {
     const source = folder("huge");
     write(join(source, "users.json"), []);
@@ -263,7 +314,7 @@ describe("7. huge exports", () => {
   });
 });
 
-describe("8. size limits", () => {
+describe("size limits", () => {
   it("should flag content over 1,000,000 characters even under 1 MiB", () => {
     const source = folder("size");
     write(join(source, "long.md"), `# Long\n${"x".repeat(1_000_000)}`);
@@ -285,7 +336,7 @@ describe("8. size limits", () => {
   });
 });
 
-describe("9. titles", () => {
+describe("titles", () => {
   it("should cut long titles to 160 characters and keep the full one", () => {
     const { title, fullTitle } = fitTitle("T".repeat(200), "Fallback");
     assert.equal(title.length, 160);
@@ -301,7 +352,7 @@ describe("9. titles", () => {
   });
 });
 
-describe("10. library reports", () => {
+describe("library reports", () => {
   it("should match report files by exact id and skip symlinks and export files", () => {
     const source = folder("library");
     write(join(source, "user.json"), {});
@@ -328,7 +379,7 @@ describe("10. library reports", () => {
   });
 });
 
-describe("11. output folder guard", () => {
+describe("output folder guard", () => {
   before(() => {
     write(join(folder("guarded"), "plan.md"), "# Plan\n");
     symlinkSync(folder("guarded"), folder("guarded-link"));
@@ -355,7 +406,7 @@ describe("11. output folder guard", () => {
   });
 });
 
-describe("12a. a Claude export wrapped in an object", () => {
+describe("a Claude export wrapped in an object", () => {
   it("should read conversations under a `conversations` key", () => {
     const source = folder("claude-wrapped");
     write(join(source, "users.json"), []);
@@ -367,7 +418,7 @@ describe("12a. a Claude export wrapped in an object", () => {
   });
 });
 
-describe("12b. malformed Claude exports, message order, and untitled artifacts", () => {
+describe("malformed Claude exports, message order, and untitled artifacts", () => {
   it("should report malformed entries, replay edits in real time order, and never use the conversation name as a title", () => {
     const source = folder("claude-odd");
     write(join(source, "users.json"), []);
@@ -400,7 +451,7 @@ describe("12b. malformed Claude exports, message order, and untitled artifacts",
   });
 });
 
-describe("15. skipped folders", () => {
+describe("skipped folders", () => {
   it("should list build and dependency folders as skipped", () => {
     const source = folder("repo");
     write(join(source, "docs", "plan.md"), "# Plan\n");
@@ -413,7 +464,7 @@ describe("15. skipped folders", () => {
   });
 });
 
-describe("round 3, 1. paths from an earlier inventory", () => {
+describe("paths from an earlier inventory", () => {
   const setUp = (name) => {
     const source = folder(`${name}-src`);
     write(join(source, "plan.md"), `# Plan\n\nAPI_KEY=${filler(24)}\n`);
@@ -454,7 +505,7 @@ describe("round 3, 1. paths from an earlier inventory", () => {
   });
 });
 
-describe("round 3, 2. indented and quoted private keys", () => {
+describe("indented and quoted private keys", () => {
   for (const [name, prefix] of [["YAML", "  "], ["Markdown quote", "> "]]) {
     it(`should redact the whole key body in a ${name} block`, () => {
       const body = filler(64, "QUJD");
@@ -466,7 +517,7 @@ describe("round 3, 2. indented and quoted private keys", () => {
   }
 });
 
-describe("round 3, 3. connection-string passwords with a slash", () => {
+describe("connection-string passwords with a slash", () => {
   it("should find and redact a password that contains /", () => {
     const password = `abc/${filler(10)}`;
     const text = `postgres://app:${password}@db.example.test/app`;
@@ -480,7 +531,7 @@ describe("round 3, 3. connection-string passwords with a slash", () => {
   });
 });
 
-describe("round 3, 4. more coding-agent homes", () => {
+describe("more coding-agent homes", () => {
   it("should read nothing from Gemini and OpenCode session stores", () => {
     const home = folder("home3");
     write(join(home, ".gemini", "tmp", "abc123", "chats", "session.json"), JSON.stringify({ messages: [] }));
@@ -519,7 +570,7 @@ describe("round 3, 4. more coding-agent homes", () => {
   });
 });
 
-describe("round 3, 5. a conversations.json inside a document folder", () => {
+describe("a conversations.json inside a document folder", () => {
   it("should list it as skipped and keep scanning, even when it is malformed or ChatGPT-shaped", () => {
     const source = folder("docs-with-stray");
     write(join(source, "plan.md"), "# Plan\n");
@@ -534,7 +585,7 @@ describe("round 3, 5. a conversations.json inside a document folder", () => {
   });
 });
 
-describe("round 3, 6. canvas replays that would silently differ", () => {
+describe("canvas replays that would silently differ", () => {
   it("should refuse \\A and \\Z under (?m)", () => {
     for (const pattern of [String.raw`(?m)\Aalpha`, String.raw`(?m)beta\Z`]) {
       const doc = { content: "alpha\nbeta", notes: new Set() };
@@ -555,7 +606,7 @@ describe("round 3, 6. canvas replays that would silently differ", () => {
   });
 });
 
-describe("round 3, optional", () => {
+describe("bearer case and the per-rule findings cap", () => {
   it("should find a bearer token in any case", () => {
     assert.ok(scanSecrets(`authorization: BEARER ${filler(30)}`).findings.some((finding) => finding.rule === "bearer-token"));
   });
@@ -565,5 +616,39 @@ describe("round 3, optional", () => {
     const { findings, truncated } = scanSecrets(`${noisy}\nghp_${filler(36)}\n`);
     assert.equal(truncated, true);
     assert.ok(findings.some((finding) => finding.rule === "github-token"));
+  });
+});
+
+describe("document size and project suggestions", () => {
+  it("should skip a document over the 25 MB file limit without reading it", () => {
+    const source = folder("too-big-doc");
+    write(join(source, "huge.md"), "");
+    truncateSync(join(source, "huge.md"), 25 * 1024 * 1024 + 1);
+    write(join(source, "small.md"), "# Small\n");
+    run(["scan", "--out", out("too-big-doc"), "--source", source]);
+    const { items, skipped } = inventory(out("too-big-doc"));
+    assert.deepEqual(items.map((item) => item.title), ["Small"]);
+    assert.ok(skipped.some((entry) => entry.path === "huge.md" && /25 MB file limit/.test(entry.reason)));
+  });
+
+  it("should suggest a repository only from inside the source", () => {
+    const repo = folder("suggest-repo");
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    write(join(repo, "docs", "plan.md"), "# Plan\n");
+    write(join(repo, "inner", ".git", "HEAD"), "ref");
+    write(join(repo, "inner", "notes.md"), "# Inner notes\n");
+    run(["scan", "--out", out("suggest-repo-root"), "--source", repo]);
+    const fromRoot = Object.fromEntries(inventory(out("suggest-repo-root")).items.map((item) => [item.title, item.suggestedProject]));
+    assert.deepEqual(fromRoot, { Plan: "suggest-repo", "Inner notes": "inner" });
+    run(["scan", "--out", out("suggest-repo-docs"), "--source", join(repo, "docs")]);
+    assert.equal(inventory(out("suggest-repo-docs")).items[0].suggestedProject, null, "a .git above the source is never used");
+  });
+
+  it("should not treat a folder whose name only starts with the source name as inside it", () => {
+    const source = folder("prefix");
+    write(join(source, "plan.md"), "# Plan\n");
+    mkdirSync(join(folder("prefixed"), ".git"), { recursive: true });
+    run(["scan", "--out", out("prefix"), "--source", source]);
+    assert.equal(inventory(out("prefix")).items[0].suggestedProject, null);
   });
 });
