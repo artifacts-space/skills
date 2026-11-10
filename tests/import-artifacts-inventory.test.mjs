@@ -159,7 +159,7 @@ describe("inventory scan", () => {
     // conv-2 has no current_node, so the newest message (n9) picks the branch: only "Rewritten" is on it.
     assert.equal(readFileSync(join(out, byTitle["Rewritten"].path), "utf8"), "Second draft");
     assert.equal(byTitle["Counter"], undefined);
-    assert.ok(skipped.some((entry) => /Script help/.test(entry.path) && /1 canvas document\(s\) on an earlier branch/.test(entry.reason)));
+    assert.ok(skipped.some((entry) => /conv-2/.test(entry.path) && /1 canvas document\(s\) on an earlier branch/.test(entry.reason)));
     assert.equal(byTitle["Market report"].type, "chatgpt-report");
     assert.equal(byTitle["Deleted report"], undefined);
     assert.equal(byTitle["upload.png"], undefined);
@@ -225,7 +225,7 @@ describe("inventory scan", () => {
     const out = join(root, "out-13");
     run("scan", "--out", out, "--source", folder);
     const reasons = inventory(out).skipped.map((entry) => entry.reason).join("\n");
-    assert.match(reasons, /Report "Folder report" could not be read/);
+    assert.match(reasons, /Report "Folder report" is not a regular file/);
     assert.match(reasons, /Report "Huge report" is larger than the 25 MB file limit/);
     assert.match(reasons, /1 canvas document\(s\) could not be read/);
     const [kept] = inventory(out).items;
@@ -291,7 +291,7 @@ describe("inventory scan", () => {
     assert.ok(skipped.some((entry) => entry.path === join("old-export", "conversations.json")));
     assert.ok(skipped.some((entry) => entry.path === "session.jsonl"));
     assert.ok(!items.some((item) => item.title === "page"));
-    assert.ok(items.find((item) => item.title === "Big").notes.some((note) => /1 MB/.test(note)));
+    assert.ok(items.find((item) => item.title === "Big").notes.some((note) => /1,000,000-character limit/.test(note)));
   });
 
   it("should redact only the rules named with --rules", () => {

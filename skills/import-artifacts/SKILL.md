@@ -80,8 +80,11 @@ different, read its structure before you trust the inventory.
 Run the helper next to this file, `scripts/inventory.mjs`. It needs Node 18 or
 later, reads the sources without changing them, and uses no network. Give each
 source its account label; for a folder of documents, add `--origin`
-(`claude-code`, `codex`, `cursor`, `claude`, `chatgpt`, or `files`). The output
-folder must be outside every source.
+(`claude-code`, `codex`, `cursor`, `claude`, `chatgpt`, or `files`). Give each
+export its own `--source`: a source that holds two exports is refused. The
+output folder must be outside every source, and either empty or an earlier
+inventory folder. Running the scan again into the same folder keeps the
+redactions you already made.
 
 ```bash
 node <skill-folder>/scripts/inventory.mjs scan --out ~/artifact-imports/inventory \
@@ -91,19 +94,31 @@ node <skill-folder>/scripts/inventory.mjs scan --out ~/artifact-imports/inventor
   --source ~/.claude/plans --account personal --origin claude-code
 ```
 
-It detects Claude and ChatGPT exports, keeps the final version of each
-artifact and canvas (for ChatGPT, on the branch of each conversation the user
-last viewed; canvases on other branches are listed as skipped), and reads document folders while skipping `node_modules`,
-hidden folders, credential files, and export files that hold conversations
-(`conversations.json`, `chat.html`, `*.jsonl`), which it lists as skipped. A
-document folder takes documents, PDFs, images, and Office files; it takes code
-and HTML files only with `--origin claude` or `chatgpt`, for a folder of
-downloaded artifacts. It writes `inventory.json` and one file
-per item under `items/`, and prints a table. Each item has a `key` (`imp-` and
-12 characters of its content hash), title, origin, account labels, original
-date, size, a format guess, a suggested project, secret findings, and notes.
-The same content found in several accounts or sources becomes one item that
-lists every account.
+It detects Claude and ChatGPT exports and keeps the final version of each
+artifact and canvas. For ChatGPT, that is the branch of each conversation the
+user last viewed; canvases on other branches are listed as skipped. In a
+document folder it takes documents, PDFs, images, and Office files, and code
+and HTML files only with `--origin claude` or `chatgpt` (a folder of downloaded
+artifacts). It never reads hidden folders, and lists as skipped:
+
+- build and dependency folders (`node_modules`, `dist`, `build`, `out`,
+  `vendor`, `target`, `coverage`, `__pycache__`)
+- credential files (`.env`, `*.pem`, `*.key`, `auth.json`, and the like)
+- export files that hold conversations (`conversations.json`, `chat.html`,
+  `*.jsonl`)
+- earlier inventory folders
+- everything in `~/.claude`, `~/.codex`, and `~/.cursor` except their
+  `plans/` folders
+
+It writes `inventory.json` and one file per item under `items/`, and prints a
+table. Each item has a `key` (`imp-` and 12 characters of its content hash),
+title, origin, account labels, original date, size, a format guess, a
+suggested project, secret findings, and notes. The same content found in
+several accounts or sources becomes one item that lists every account. Only
+identical bytes merge: a published artifact you downloaded merges with its
+export copy only if the download is exactly the same text.
+
+An export file over 500 MB is too large for the helper; it says so and stops.
 
 ## 3. Show the inventory and let the user choose
 
@@ -138,8 +153,9 @@ value. For each one the user chooses:
 - **Skip** the item, or
 - **Redact** it: `node <skill-folder>/scripts/inventory.mjs redact --out ~/artifact-imports/inventory --key imp-…`
   replaces the findings with `[REDACTED:<rule>]` in the extracted copy only.
-  Add `--rules aws-access-key,jwt` to redact only some rules. Read the result
-  before you upload it.
+  Add `--rules aws-access-key,jwt` to redact only some rules (the script
+  rejects a rule name it does not know). Names stay, so `API_KEY=…` becomes
+  `API_KEY=[REDACTED:env-secret]`. Read the result before you upload it.
 
 The scan is a pattern check, so it misses things and flags harmless text.
 Binary files (PDFs, images, Office files) are not scanned; ask the user to
@@ -171,20 +187,27 @@ For each picked item, in date order:
   Claude HTML and React artifacts and live ChatGPT canvases are saved as
   `code`; artifacts.space shows their source, not a running page. Tell the
   user.
-- **Text items** (`artifacts_create`): `title` is the original title; `content`
+- **Text items** (`artifacts_create`): `title` is the inventory's title (cut to
+  160 characters; the full one is in `fullTitle`, so put it in `summary`);
+  `content`
   is the item's file; `kind` and `language` from the format; `summary` records
   where it came from, such as
   `Imported from Claude (work). Created 2025-03-14. imp-3f9a1c2b7d4e`;
   `tags` and `project` as the user confirmed; `source` is your agent name, as
   for any save; `metadata` holds
-  `{ "import": { "key", "sourceSha256", "origin", "accounts", "originalCreatedAt", "originalUrl" } }`.
+  `{ "import": { "key", "sourceSha256", "origin", "accounts", "originalCreatedAt", "originalUrl", "fullTitle" } }`.
   `sourceSha256` is the hash of the original item, before any redaction.
   Leave out the local paths and conversation titles.
-- **Binary items and text over 1 MB:** upload with `files_request_upload`, a
-  PUT of the bytes, and `files_finalize`, then `files_create_artifact` with the
-  title, the same `summary`, `project`, and `notes` that repeat the provenance
-  line. Then set the tags with `artifacts_update`. Files are limited to 25 MB.
-  Split a large text item into parts only if the user agrees.
+- **Binary items and text over the content limit:** an artifact holds at most
+  1,000,000 characters. Items over it have `uploadAs` set. Upload with
+  `files_request_upload`, a PUT of the bytes, and `files_finalize`, then
+  `files_create_artifact` with the title, the same `summary`, `project`, and
+  `notes` that repeat the provenance line. Files take `.md`, `.txt`, `.csv`,
+  and `.json` text but no code, HTML, SVG, or Mermaid files, so upload those
+  under a `.txt` name (as `uploadAs` says) or skip them with the user's OK.
+  `files_create_artifact` takes no tags or metadata: set both in one
+  `artifacts_update` call right after. Files are limited to 25 MB. Split a
+  large text item into parts only if the user agrees.
 - **Limits.** A limit error says when to try again. Wait that long; never
   retry in a loop. A storage quota error ends the import: stop and tell the
   user.
