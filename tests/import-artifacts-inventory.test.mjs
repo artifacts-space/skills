@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -197,6 +197,36 @@ describe("inventory scan", () => {
     const out = join(root, "out-12");
     run("scan", "--out", out, "--source", folder);
     assert.ok(inventory(out).skipped.some((entry) => entry.path === "library_files.json" && /Not a list/.test(entry.reason)));
+  });
+
+  it("should list unreadable and oversized library reports and unreadable canvases as skipped", () => {
+    const folder = join(root, "chatgpt-bad-reports");
+    write(join(folder, "user.json"), { id: "user-test" });
+    write(join(folder, "conversations.json"), [
+      {
+        id: "conv-4",
+        title: "Broken canvas",
+        current_node: "b1",
+        mapping: {
+          root: { id: "root", parent: null, message: null },
+          b1: { id: "b1", parent: "root", message: { author: { role: "assistant" }, recipient: "canmore.create_textdoc", create_time: 1, content: { parts: ["{ cut off"] } } },
+        },
+      },
+    ]);
+    write(join(folder, "library_files.json"), [
+      { file_id: "file_dir", file_name: "Folder report", mime_type: "text/markdown", library_artifact_type: "report" },
+      { file_id: "file_big", file_name: "Huge report", mime_type: "application/pdf", library_artifact_type: "report" },
+    ]);
+    mkdirSync(join(folder, "file_dir-report.md"));
+    write(join(folder, "file_big-report.pdf"), "");
+    truncateSync(join(folder, "file_big-report.pdf"), 25 * 1024 * 1024 + 1);
+    const out = join(root, "out-13");
+    run("scan", "--out", out, "--source", folder);
+    const reasons = inventory(out).skipped.map((entry) => entry.reason).join("\n");
+    assert.match(reasons, /Report "Folder report" could not be read/);
+    assert.match(reasons, /Report "Huge report" is larger than the 25 MB file limit/);
+    assert.match(reasons, /1 canvas document\(s\) could not be read/);
+    assert.equal(inventory(out).items.length, 0);
   });
 
   it("should stop with a message when an export file is cut short", () => {

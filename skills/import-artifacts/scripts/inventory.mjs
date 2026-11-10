@@ -299,10 +299,12 @@ function applyCanvasUpdate(doc, update) {
   }
 }
 
-/** Final versions of the canvas documents on a conversation's active branch. */
+/** Final versions of the canvas documents on a conversation's active branch, and how many creates could not be read. */
 function canvasDocuments(conversation) {
   const docs = [];
+  let unreadable = 0;
   let current = null;
+  const replayFailed = "An edit could not be replayed; compare with the original";
   for (const message of activeBranch(conversation)) {
     const role = message.author?.role;
     const textdocId = message.metadata?.canvas?.textdoc_id;
@@ -310,14 +312,20 @@ function canvasDocuments(conversation) {
     if (role !== "assistant") continue;
     const recipient = message.recipient ?? "";
     if (recipient !== "canmore.create_textdoc" && recipient !== "canmore.update_textdoc") continue;
+    const creates = recipient === "canmore.create_textdoc";
     let input;
     try {
       input = JSON.parse(messageText(message));
     } catch {
+      if (creates) unreadable += 1;
+      else current?.notes.add(replayFailed);
       continue;
     }
-    if (recipient === "canmore.create_textdoc") {
-      if (typeof input.content !== "string") continue;
+    if (creates) {
+      if (typeof input?.content !== "string") {
+        unreadable += 1;
+        continue;
+      }
       current = { id: null, name: input.name ?? "", type: input.type ?? "document", content: input.content, createdAt: message.create_time, notes: new Set() };
       docs.push(current);
       continue;
@@ -325,10 +333,10 @@ function canvasDocuments(conversation) {
     const target = (input.textdoc_id && docs.find((doc) => doc.id === input.textdoc_id)) || current;
     if (!target) continue;
     for (const update of input.updates ?? []) {
-      if (!applyCanvasUpdate(target, update)) target.notes.add("An edit could not be replayed; compare with the original");
+      if (!applyCanvasUpdate(target, update)) target.notes.add(replayFailed);
     }
   }
-  return docs;
+  return { docs, unreadable };
 }
 
 /** How many canvas documents a conversation creates on branches other than the active one. */
@@ -346,8 +354,11 @@ function readChatGptExport(root, source, shards) {
     for (const conversation of conversations) {
       if (!conversation?.mapping) continue;
       const id = conversation.conversation_id ?? conversation.id;
-      const docs = canvasDocuments(conversation);
+      const { docs, unreadable } = canvasDocuments(conversation);
       const offBranch = offBranchCanvasCount(conversation);
+      if (unreadable > 0) {
+        skipped.push({ path: `ChatGPT conversation "${conversation.title ?? id}"`, reason: `${unreadable} canvas document(s) could not be read from the export` });
+      }
       if (offBranch > 0) {
         skipped.push({ path: `ChatGPT conversation "${conversation.title ?? id}"`, reason: `${offBranch} canvas document(s) on an earlier branch of the conversation were not read; only the branch the user last viewed is` });
       }
