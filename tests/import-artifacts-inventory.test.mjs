@@ -154,10 +154,12 @@ describe("inventory scan", () => {
   it("should replay canvas edits on the active branch and read library reports", () => {
     const out = join(root, "out-9");
     run("scan", "--out", out, "--source", join(root, "chatgpt"), "--account", "personal");
-    const byTitle = Object.fromEntries(inventory(out).items.map((item) => [item.title, item]));
+    const { items, skipped } = inventory(out);
+    const byTitle = Object.fromEntries(items.map((item) => [item.title, item]));
     // conv-2 has no current_node, so the newest message (n9) picks the branch: only "Rewritten" is on it.
     assert.equal(readFileSync(join(out, byTitle["Rewritten"].path), "utf8"), "Second draft");
     assert.equal(byTitle["Counter"], undefined);
+    assert.ok(skipped.some((entry) => /Script help/.test(entry.path) && /1 canvas document\(s\) on an earlier branch/.test(entry.reason)));
     assert.equal(byTitle["Market report"].type, "chatgpt-report");
     assert.equal(byTitle["Deleted report"], undefined);
     assert.equal(byTitle["upload.png"], undefined);

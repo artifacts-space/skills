@@ -92,7 +92,8 @@ node <skill-folder>/scripts/inventory.mjs scan --out ~/artifact-imports/inventor
 ```
 
 It detects Claude and ChatGPT exports, keeps the final version of each
-artifact and canvas, and reads document folders while skipping `node_modules`,
+artifact and canvas (for ChatGPT, on the branch of each conversation the user
+last viewed; canvases on other branches are listed as skipped), and reads document folders while skipping `node_modules`,
 hidden folders, credential files, and export files that hold conversations
 (`conversations.json`, `chat.html`, `*.jsonl`), which it lists as skipped. A
 document folder takes documents, PDFs, images, and Office files; it takes code

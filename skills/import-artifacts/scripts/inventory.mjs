@@ -331,15 +331,26 @@ function canvasDocuments(conversation) {
   return docs;
 }
 
+/** How many canvas documents a conversation creates on every branch, not only the active one. */
+function canvasCreateCount(conversation) {
+  return Object.values(conversation.mapping ?? {}).filter((node) => node?.message?.author?.role === "assistant" && node.message.recipient === "canmore.create_textdoc").length;
+}
+
 function readChatGptExport(root, source, shards) {
   const items = [];
+  const skipped = [];
   for (const shard of shards) {
     const data = readJson(shard);
     const conversations = Array.isArray(data) ? data : data?.conversations ?? [data];
     for (const conversation of conversations) {
       if (!conversation?.mapping) continue;
       const id = conversation.conversation_id ?? conversation.id;
-      for (const doc of canvasDocuments(conversation)) {
+      const docs = canvasDocuments(conversation);
+      const offBranch = canvasCreateCount(conversation) - docs.length;
+      if (offBranch > 0) {
+        skipped.push({ path: `ChatGPT conversation "${conversation.title ?? id}"`, reason: `${offBranch} canvas document(s) on an earlier branch of the conversation were not read; only the branch the user last viewed is` });
+      }
+      for (const doc of docs) {
         const format = canvasFormat(doc.type);
         items.push({
           type: "chatgpt-canvas",
@@ -356,26 +367,34 @@ function readChatGptExport(root, source, shards) {
       }
     }
   }
-  items.push(...chatGptReports(root, source));
-  return { items, owners: 1 };
+  items.push(...chatGptReports(root, source, skipped));
+  return { items, owners: 1, skipped };
 }
 
 /** Generated reports listed in library_files.json, when the file is in the export. */
-function chatGptReports(root, source) {
+function chatGptReports(root, source, skipped) {
   const library = findFiles(root, (name) => /^library[-_]files\.json$/i.test(name))[0];
   if (!library) return [];
+  const folder = dirname(library);
+  const skip = (path, reason) => skipped.push({ path: relative(root, path), reason });
   let files;
   try {
-    files = readdirSync(dirname(library));
+    files = readdirSync(folder);
   } catch {
+    skip(folder, "Could not be read; its library reports were not read");
+    return [];
+  }
+  const entries = readJson(library);
+  if (!Array.isArray(entries)) {
+    skip(library, "Not a list of library files; its reports were not read");
     return [];
   }
   const reports = [];
-  for (const entry of readJson(library)) {
+  for (const entry of entries) {
     if (entry?.library_artifact_type !== "report" || entry.trashed_at || entry.deleted_at || !entry.file_id) continue;
     const stored = files.find((name) => name.startsWith(entry.file_id));
     if (!stored) continue;
-    const path = join(dirname(library), stored);
+    const path = join(folder, stored);
     const textual = /^text\/|markdown|json/.test(entry.mime_type ?? "");
     const base = {
       type: "chatgpt-report",
@@ -387,14 +406,26 @@ function chatGptReports(root, source) {
       notes: ["Found in the ChatGPT library; this export layout is not documented by OpenAI"],
       source,
     };
-    if (textual) {
-      try {
-        reports.push({ ...base, content: readFileSync(path, "utf8"), format: { kind: "markdown" } });
-      } catch {
-        // An unreadable report file is left out; the rest of the export still counts.
-      }
+    let size;
+    try {
+      size = statSync(path).size;
+    } catch {
+      skip(path, `Report "${base.title}" could not be read`);
+      continue;
     }
-    else reports.push({ ...base, filePath: path, contentType: entry.mime_type ?? "application/octet-stream", format: { kind: "file" } });
+    if (size > MAX_FILE_BYTES) {
+      skip(path, `Report "${base.title}" is larger than the 25 MB file limit`);
+      continue;
+    }
+    if (!textual) {
+      reports.push({ ...base, filePath: path, contentType: entry.mime_type ?? "application/octet-stream", format: { kind: "file" } });
+      continue;
+    }
+    try {
+      reports.push({ ...base, content: readFileSync(path, "utf8"), format: { kind: "markdown" } });
+    } catch {
+      skip(path, `Report "${base.title}" could not be read`);
+    }
   }
   return reports;
 }
@@ -605,7 +636,7 @@ function printTable(inventory, out) {
   });
   const withSecrets = inventory.items.filter((item) => item.secrets.length > 0).length;
   const multiOwner = inventory.sources.filter((source) => source.owners > 1).length;
-  console.log(`\n${inventory.items.length} items, ${inventory.duplicatesMerged} duplicates merged, ${withSecrets} with possible secrets, ${inventory.skipped.length} files skipped.`);
+  console.log(`\n${inventory.items.length} items, ${inventory.duplicatesMerged} duplicates merged, ${withSecrets} with possible secrets, ${inventory.skipped.length} skipped (listed in inventory.json).`);
   if (inventory.skipped.some((entry) => entry.reason.startsWith("Looks like conversation"))) {
     console.log("Some skipped files look like a data export the script did not recognise: check that each export is unzipped into its own folder.");
   }
