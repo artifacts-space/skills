@@ -15,4 +15,8 @@ file; edit `AGENTS.md`, never replace the symlink.
 - Never put real tokens or secrets in examples. Use `YOUR_TOKEN` or
   `$ARTIFACTS_SPACE_TOKEN`.
 - Run `node scripts/check-skills.mjs` before you commit. CI runs it too.
+- A skill may ship a small helper under `skills/<name>/scripts/`: Node or
+  Python standard library only, no network, read-only on the user's data.
+  Test it in `tests/` with synthetic fixtures, never real user data, and run
+  `node --test "tests/**/*.test.mjs"`. CI runs the tests too.
 - Commit messages are conventional: `feat:`, `fix:`, `docs:`, `chore:`.
