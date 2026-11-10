@@ -350,7 +350,7 @@ describe("11. output folder guard", () => {
   });
 });
 
-describe("12. a Claude export wrapped in an object", () => {
+describe("12a. a Claude export wrapped in an object", () => {
   it("should read conversations under a `conversations` key", () => {
     const source = folder("claude-wrapped");
     write(join(source, "users.json"), []);
@@ -362,7 +362,7 @@ describe("12. a Claude export wrapped in an object", () => {
   });
 });
 
-describe("12-14. malformed Claude exports, message order, and untitled artifacts", () => {
+describe("12b-14. malformed Claude exports, message order, and untitled artifacts", () => {
   it("should report malformed entries, replay edits in real time order, and never use the conversation name as a title", () => {
     const source = folder("claude-odd");
     write(join(source, "users.json"), []);
