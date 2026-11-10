@@ -222,6 +222,8 @@ describe("5. secret rules", () => {
     run(["scan", "--out", out("rules"), "--source", source]);
     const [item] = inventory(out("rules")).items;
     assert.match(runError(["redact", "--out", out("rules"), "--key", item.key, "--rules", "aws-key"]), /unknown rule\(s\) aws-key/);
+    assert.match(runError(["redact", "--out", out("rules"), "--key", item.key, "--rules", " , "]), /needs at least one rule name/);
+    assert.equal(inventory(out("rules")).items[0].redacted, undefined);
   });
 });
 
@@ -365,7 +367,7 @@ describe("12a. a Claude export wrapped in an object", () => {
   });
 });
 
-describe("12b-14. malformed Claude exports, message order, and untitled artifacts", () => {
+describe("12b. malformed Claude exports, message order, and untitled artifacts", () => {
   it("should report malformed entries, replay edits in real time order, and never use the conversation name as a title", () => {
     const source = folder("claude-odd");
     write(join(source, "users.json"), []);

@@ -109,7 +109,10 @@ function parseArgs(argv) {
     const current = options.sources.at(-1);
     if (flag === "--out") options.out = resolve(value);
     else if (flag === "--key") options.key = value;
-    else if (flag === "--rules") options.rules = new Set(value.split(",").map((name) => name.trim()).filter(Boolean));
+    else if (flag === "--rules") {
+      options.rules = new Set(value.split(",").map((name) => name.trim()).filter(Boolean));
+      if (options.rules.size === 0) fail("--rules needs at least one rule name");
+    }
     else if (flag === "--source") options.sources.push({ path: resolve(value), account: "default", origin: null });
     else if (flag === "--account" && current) current.account = value;
     else if (flag === "--origin" && current) current.origin = value;
