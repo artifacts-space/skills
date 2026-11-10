@@ -889,7 +889,7 @@ function readSource(source) {
     else if (sample && "mapping" in sample) kind = "chatgpt";
     else if (!sample && (siblings.has("users.json") || siblings.has("projects.json"))) kind = "claude";
     else if (!sample && (siblings.has("chat.html") || siblings.has("user.json") || siblings.has("export_manifest.json"))) kind = "chatgpt";
-    if (kind) candidates.push({ folder, files, first, kind });
+    if (kind) candidates.push({ folder, files, first, list, kind });
   }
   if (candidates.length > 1) {
     const names = candidates.map(({ folder }) => relative(source.path, folder) || ".").join(", ");
@@ -897,10 +897,9 @@ function readSource(source) {
   }
   if (candidates.length === 0) return { ...readDocuments(source.path, { ...source, origin: source.origin ?? "files" }), kind: "documents" };
 
-  const [{ folder, files, first, kind }] = candidates;
+  const [{ folder, files, first, list, kind }] = candidates;
   const others = entriesBesideExport(source.path, folder).map((path) => ({ path: relative(source.path, path), reason: "Beside an export in the same source; give it its own --source to read it" }));
   if (kind === "claude") {
-    const list = Array.isArray(first) ? first : [];
     if (files.length > 1) others.push({ path: relative(source.path, files[1]), reason: "A Claude export has one conversations.json; extra files were not read" });
     const result = readClaudeExport(folder, { ...source, origin: source.origin ?? "claude" }, list);
     return { ...result, skipped: [...others, ...result.skipped], kind: "claude-export" };

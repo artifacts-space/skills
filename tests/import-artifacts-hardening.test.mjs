@@ -324,10 +324,13 @@ describe("10. library reports", () => {
 });
 
 describe("11. output folder guard", () => {
+  before(() => {
+    write(join(folder("guarded"), "plan.md"), "# Plan\n");
+    symlinkSync(folder("guarded"), folder("guarded-link"));
+  });
+
   it("should refuse an --out reached through a symlink into the source", () => {
     const source = folder("guarded");
-    write(join(source, "plan.md"), "# Plan\n");
-    symlinkSync(source, folder("guarded-link"));
     assert.match(runError(["scan", "--out", join(folder("guarded-link"), "inventory"), "--source", source]), /outside every source/);
   });
 
@@ -344,6 +347,18 @@ describe("11. output folder guard", () => {
     const { items, skipped } = inventory(out("with-inventory"));
     assert.deepEqual(items.map((item) => item.title), ["Plan"]);
     assert.ok(skipped.some((entry) => entry.path === "old-run-copy" && /earlier import inventory/.test(entry.reason)));
+  });
+});
+
+describe("12. a Claude export wrapped in an object", () => {
+  it("should read conversations under a `conversations` key", () => {
+    const source = folder("claude-wrapped");
+    write(join(source, "users.json"), []);
+    write(join(source, "conversations.json"), {
+      conversations: [{ uuid: "w", chat_messages: [{ sender: "assistant", created_at: "2025-01-01T00:00:00Z", content: [{ type: "tool_use", name: "artifacts", input: { command: "create", id: "a", type: "text/markdown", title: "Wrapped", content: "# Wrapped" } }] }] }],
+    });
+    run(["scan", "--out", out("claude-wrapped"), "--source", source]);
+    assert.deepEqual(inventory(out("claude-wrapped")).items.map((item) => item.title), ["Wrapped"]);
   });
 });
 
