@@ -126,13 +126,16 @@ describe("3. several exports in one source", () => {
     assert.match(message, /holds 2 exports \(personal, work\)/);
   });
 
-  it("should list files beside a nested export instead of dropping them silently", () => {
+  it("should read a folder with an export beside other files as documents and list the export files", () => {
     const source = folder("export-and-notes");
     write(join(source, "export", "users.json"), []);
     write(join(source, "export", "conversations.json"), []);
     write(join(source, "notes.md"), "# Notes\n");
-    run(["scan", "--out", out("export-and-notes"), "--source", source]);
-    assert.ok(inventory(out("export-and-notes")).skipped.some((entry) => entry.path === "notes.md" && /its own --source/.test(entry.reason)));
+    const table = run(["scan", "--out", out("export-and-notes"), "--source", source]);
+    const { items, skipped } = inventory(out("export-and-notes"));
+    assert.deepEqual(items.map((item) => item.title), ["Notes"]);
+    assert.ok(skipped.some((entry) => entry.path === join("export", "conversations.json") && /conversations are never imported/.test(entry.reason)));
+    assert.match(table, /did not recognise/);
   });
 });
 
@@ -405,5 +408,160 @@ describe("15. skipped folders", () => {
     const { items, skipped } = inventory(out("repo"));
     assert.deepEqual(items.map((item) => item.title), ["Plan"]);
     assert.deepEqual(skipped.filter((entry) => /Build or dependency/.test(entry.reason)).map((entry) => entry.path).sort(), ["dist", "node_modules"]);
+  });
+});
+
+describe("round 3, 1. paths from an earlier inventory", () => {
+  const setUp = (name) => {
+    const source = folder(`${name}-src`);
+    write(join(source, "plan.md"), `# Plan\n\nAPI_KEY=${filler(24)}\n`);
+    const target = out(name);
+    run(["scan", "--out", target, "--source", source]);
+    return { source, target };
+  };
+  const tamper = (target, change) => {
+    const data = inventory(target);
+    change(data.items[0]);
+    writeFileSync(join(target, "inventory.json"), JSON.stringify(data));
+  };
+
+  it("should refuse to redact a file outside <out>/items", () => {
+    const { source, target } = setUp("tamper-redact");
+    const before = readFileSync(join(source, "plan.md"), "utf8");
+    tamper(target, (item) => {
+      item.path = join("..", "..", "tamper-redact-src", "plan.md");
+    });
+    const key = inventory(target).items[0].key;
+    assert.match(runError(["redact", "--out", target, "--key", key]), /file path outside/);
+    assert.equal(readFileSync(join(source, "plan.md"), "utf8"), before);
+  });
+
+  it("should never read an outside file as a redacted item's content on a re-scan", () => {
+    const { source, target } = setUp("tamper-rescan");
+    write(join(root, "out", "outside", "notes.txt"), "outside content");
+    tamper(target, (item) => {
+      item.redacted = true;
+      item.path = "../outside/notes.txt";
+    });
+    run(["scan", "--out", target, "--source", source]);
+    const [item] = inventory(target).items;
+    assert.equal(item.redacted, undefined);
+    assert.match(item.path, /^items\/imp-[0-9a-f]{12}\.md$/);
+    assert.match(readFileSync(join(target, item.path), "utf8"), /# Plan/);
+    assert.ok(item.notes.some((note) => /not trusted/.test(note)));
+  });
+});
+
+describe("round 3, 2. indented and quoted private keys", () => {
+  for (const [name, prefix] of [["YAML", "  "], ["Markdown quote", "> "]]) {
+    it(`should redact the whole key body in a ${name} block`, () => {
+      const body = filler(64, "QUJD");
+      const text = ["key: |", `${prefix}-----BEGIN RSA PRIVATE KEY-----`, `${prefix}${body}`, `${prefix}${filler(48, "RUZH")}`, "after: value", ""].join("\n");
+      const redacted = redactText(text);
+      assert.ok(!redacted.includes(body.slice(0, 16)), redacted);
+      assert.match(redacted, /after: value/);
+    });
+  }
+});
+
+describe("round 3, 3. connection-string passwords with a slash", () => {
+  it("should find and redact a password that contains /", () => {
+    const password = `abc/${filler(10)}`;
+    const text = `postgres://app:${password}@db.example.test/app`;
+    assert.ok(scanSecrets(text).findings.some((finding) => finding.rule === "connection-string"));
+    assert.equal(redactText(text), "postgres://[REDACTED:connection-string]@db.example.test/app");
+  });
+
+  it("should not flag a port and path before an @ in the path", () => {
+    assert.equal(scanSecrets("https://registry.example.test:8443/@scope/package").findings.length, 0);
+    assert.equal(scanSecrets("https://example.test:443/search?who=a@b.test").findings.length, 0);
+  });
+});
+
+describe("round 3, 4. more coding-agent homes", () => {
+  it("should read nothing from Gemini and OpenCode session stores", () => {
+    const home = folder("home3");
+    write(join(home, ".gemini", "tmp", "abc123", "chats", "session.json"), JSON.stringify({ messages: [] }));
+    write(join(home, ".local", "share", "opencode", "storage", "session", "s1.json"), "{}");
+    write(join(home, ".config", "opencode", "notes.md"), "# Config notes\n");
+    for (const source of [join(home, ".gemini"), join(home, ".local", "share"), join(home, ".config", "opencode")]) {
+      const target = out(`homes-${source.length}`);
+      run(["scan", "--out", target, "--source", source], { HOME: home });
+      assert.equal(inventory(target).items.length, 0, source);
+    }
+  });
+
+  it("should guard a home named by CLAUDE_CONFIG_DIR", () => {
+    const home = folder("home4");
+    const config = folder("custom-claude");
+    write(join(config, "plans", "p.md"), "# Custom plan\n");
+    write(join(config, "projects", "x", "memory", "m.md"), "# Memory\n");
+    run(["scan", "--out", out("claude-config-dir"), "--source", config], { HOME: home, CLAUDE_CONFIG_DIR: config });
+    assert.deepEqual(inventory(out("claude-config-dir")).items.map((item) => item.title), ["Custom plan"]);
+  });
+
+  it("should guard a symlinked home and refuse a plans/ that points outside it", () => {
+    const home = folder("home5");
+    const real = folder("real-claude");
+    write(join(real, "projects", "x", "memory", "m.md"), "# Memory\n");
+    write(join(folder("elsewhere-plans"), "outside.md"), "# Outside plan\n");
+    symlinkSync(folder("elsewhere-plans"), join(real, "plans"));
+    mkdirSync(home, { recursive: true });
+    symlinkSync(real, join(home, ".claude"));
+    for (const [name, source] of [["link", join(home, ".claude")], ["real", real], ["plans", join(home, ".claude", "plans")]]) {
+      run(["scan", "--out", out(`symlinked-home-${name}`), "--source", source], { HOME: home });
+      const { items, skipped } = inventory(out(`symlinked-home-${name}`));
+      assert.equal(items.length, 0, name);
+      assert.ok(skipped.some((entry) => /points outside/i.test(entry.reason)), `${name}: ${JSON.stringify(skipped)}`);
+    }
+  });
+});
+
+describe("round 3, 5. a conversations.json inside a document folder", () => {
+  it("should list it as skipped and keep scanning, even when it is malformed or ChatGPT-shaped", () => {
+    const source = folder("docs-with-stray");
+    write(join(source, "plan.md"), "# Plan\n");
+    write(join(source, "broken", "conversations.json"), "{ not json");
+    write(join(source, "copied", "conversations.json"), [{ id: "c", mapping: {} }]);
+    write(join(source, "conversations.json"), [{ id: "d", mapping: {} }]);
+    run(["scan", "--out", out("docs-with-stray"), "--source", source]);
+    const { items, skipped, sources } = inventory(out("docs-with-stray"));
+    assert.equal(sources[0].kind, "documents");
+    assert.deepEqual(items.map((item) => item.title), ["Plan"]);
+    assert.equal(skipped.filter((entry) => /conversations are never imported/.test(entry.reason)).length, 3);
+  });
+});
+
+describe("round 3, 6. canvas replays that would silently differ", () => {
+  it("should refuse \\A and \\Z under (?m)", () => {
+    for (const pattern of [String.raw`(?m)\Aalpha`, String.raw`(?m)beta\Z`]) {
+      const doc = { content: "alpha\nbeta", notes: new Set() };
+      assert.equal(applyCanvasUpdate(doc, { pattern, replacement: "x" }), false, pattern);
+      assert.equal(doc.content, "alpha\nbeta");
+    }
+  });
+
+  it("should refuse word classes on non-ASCII text and allow them on ASCII text", () => {
+    const unicode = { content: "café au lait", notes: new Set() };
+    assert.equal(applyCanvasUpdate(unicode, { pattern: String.raw`\w+$`, replacement: "x" }), false);
+    assert.equal(applyCanvasUpdate(unicode, { pattern: String.raw`\bau\b`, replacement: "with" }), false);
+    assert.equal(unicode.content, "café au lait");
+    const ascii = { content: "cafe au lait", notes: new Set() };
+    assert.equal(applyCanvasUpdate(ascii, { pattern: String.raw`\bau\b`, replacement: "with" }), true);
+    assert.equal(ascii.content, "cafe with lait");
+    assert.equal(applyCanvasUpdate(unicode, { pattern: "lait", replacement: "milk" }), true, "plain patterns still replay on non-ASCII text");
+  });
+});
+
+describe("round 3, optional", () => {
+  it("should find a bearer token in any case", () => {
+    assert.ok(scanSecrets(`authorization: BEARER ${filler(30)}`).findings.some((finding) => finding.rule === "bearer-token"));
+  });
+
+  it("should cap findings per rule so one noisy rule never hides another", () => {
+    const noisy = Array.from({ length: 250 }, () => `AKIA${filler(16, "FAKE0")}`).join("\n");
+    const { findings, truncated } = scanSecrets(`${noisy}\nghp_${filler(36)}\n`);
+    assert.equal(truncated, true);
+    assert.ok(findings.some((finding) => finding.rule === "github-token"));
   });
 });

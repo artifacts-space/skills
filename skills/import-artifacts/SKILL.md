@@ -57,8 +57,8 @@ folder, one folder per account, for example
 | Other files | Any folder the user names. | Documents, PDFs, images, and Office files. |
 
 Never read session transcripts or app databases to find artifacts: not
-`~/.claude/projects/`, not `~/.codex/sessions/` or `archived_sessions/`, and not
-Cursor's chat storage. Never read credential files such as
+`~/.claude/projects/`, not `~/.codex/sessions/` or `archived_sessions/`, not
+Gemini CLI's or OpenCode's session folders, and not Cursor's chat storage. Never read credential files such as
 `~/.codex/auth.json`.
 
 **Warn the user before you scan local files.** Plans and documents that coding
@@ -81,7 +81,8 @@ Run the helper next to this file, `scripts/inventory.mjs`. It needs Node 18 or
 later, reads the sources without changing them, and uses no network. Give each
 source its account label; for a folder of documents, add `--origin`
 (`claude-code`, `codex`, `cursor`, `claude`, `chatgpt`, or `files`). Give each
-export its own `--source`: a source that holds two exports is refused. The
+export its own `--source`: a source that holds two exports is refused, and a
+`conversations.json` inside a document folder is listed as skipped, not read. The
 output folder must be outside every source, and either empty or an earlier
 inventory folder. Running the scan again into the same folder keeps the
 redactions you already made.
@@ -107,8 +108,10 @@ artifacts). It never reads hidden folders, and lists as skipped:
 - export files that hold conversations (`conversations.json`, `chat.html`,
   `*.jsonl`)
 - earlier inventory folders
-- everything in `~/.claude`, `~/.codex`, and `~/.cursor` except their
-  `plans/` folders
+- everything in coding-agent folders (`~/.claude`, `~/.codex`, `~/.cursor`,
+  `~/.gemini`, OpenCode's `~/.local/share/opencode` and `~/.config/opencode`,
+  and the folders `CLAUDE_CONFIG_DIR` or `CODEX_HOME` name) except a `plans/`
+  folder that stays inside that folder
 
 It writes `inventory.json` and one file per item under `items/`, and prints a
 table. Each item has a `key` (`imp-` and 12 characters of its content hash),

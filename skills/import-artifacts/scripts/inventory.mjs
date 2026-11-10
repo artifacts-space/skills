@@ -51,8 +51,9 @@ const SECRET_RULES = [
   rule("google-api-key", String.raw`\bAIza[0-9A-Za-z_-]{35}`),
   // Lookahead plus back-reference acts as an atomic group, so a long base64 run is never re-scanned.
   rule("jwt", String.raw`\beyJ(?=([A-Za-z0-9_-]{8,256}))\1\.eyJ(?=([A-Za-z0-9_-]{8,8192}))\2\.(?=([A-Za-z0-9_-]{8,1024}))\3`),
-  rule("bearer-token", String.raw`\b[Bb]earer[ \t]{1,4}([A-Za-z0-9._~+/=-]{20,2048})`, "", 1),
-  rule("connection-string", String.raw`\b[a-z][a-z0-9+.-]{0,20}:\/\/(?!\[REDACTED)([^\s:/@'"]{0,256}:[^\s@'"/]{1,256})@[^\s'"]{1,256}`, "i", 1),
+  rule("bearer-token", String.raw`\b[Bb][Ee][Aa][Rr][Ee][Rr][ \t]{1,4}([A-Za-z0-9._~+/=-]{20,2048})`, "", 1),
+  // The password may hold "/", but a port followed by a path ("host:8080/a@b") is not a password.
+  rule("connection-string", String.raw`\b[a-z][a-z0-9+.-]{0,20}:\/\/(?!\[REDACTED)([^\s:/@'"]{0,256}:(?!\d{1,5}\/)[^\s@'"?#]{1,256})@[^\s'"]{1,256}`, "i", 1),
   rule("env-secret", String.raw`^[ \t]{0,8}(?:export[ \t]{1,4})?[A-Z][A-Z0-9_]{0,64}(?:KEY|SECRET|TOKEN|PASS[A-Z0-9_]{0,16}|DSN|PWD)[ \t]{0,4}=[ \t]{0,4}["']?([^\s"'#$<\[][^\s"'#]{7,1023})`, "m", 1),
   rule("secret-assignment", String.raw`(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)[A-Za-z0-9_.-]{0,32}["']?[ \t]{0,8}[:=][ \t]{0,8}["']?(?!process\.env|\$|<|\[REDACTED)([^\s"'` + "`" + String.raw`,;]{8,1024})`, "i", 1),
 ];
@@ -149,6 +150,14 @@ function realish(path) {
   return caseInsensitivePaths ? full.toLowerCase() : full;
 }
 
+/** Whether `child` is `parent` or inside it as written, before symlinks are resolved. */
+function isInsideAsWritten(child, parent) {
+  const fold = (path) => (caseInsensitivePaths ? resolve(path).toLowerCase() : resolve(path));
+  const inner = fold(child);
+  const outer = fold(parent);
+  return inner === outer || inner.startsWith(outer.endsWith(sep) ? outer : outer + sep);
+}
+
 /** Whether `child` is `parent` or inside it. */
 function isInside(child, parent) {
   const inner = realish(child);
@@ -156,12 +165,17 @@ function isInside(child, parent) {
   return inner === outer || inner.startsWith(outer.endsWith(sep) ? outer : outer + sep);
 }
 
-/** Coding-agent home folders: only their plans folders are ever read. */
+/**
+ * Coding-agent home folders. Inside one, nothing is read by default: only a
+ * plans/ folder that stays inside that home. Sessions, chats, settings, and
+ * memory are never read.
+ */
 function agentHomes() {
   const home = homedir();
-  const homes = [join(home, ".claude"), join(home, ".codex"), join(home, ".cursor")];
-  if (process.env.CLAUDE_CONFIG_DIR) homes.push(resolve(process.env.CLAUDE_CONFIG_DIR));
-  if (process.env.CODEX_HOME) homes.push(resolve(process.env.CODEX_HOME));
+  const homes = [".claude", ".codex", ".cursor", ".gemini", join(".local", "share", "opencode"), join(".config", "opencode")].map((name) => join(home, name));
+  for (const variable of ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME", "OPENCODE_CONFIG_DIR"]) {
+    if (process.env[variable]) homes.push(resolve(process.env[variable]));
+  }
   return homes;
 }
 
@@ -229,13 +243,16 @@ function findSecrets(text, rules = null) {
   let truncated = false;
   for (const { name, pattern, group } of SECRET_RULES) {
     if (rules && !rules.has(name)) continue;
+    let count = 0;
     for (const match of text.matchAll(pattern)) {
       const [start, end] = match.indices[group];
       if (found.some((other) => start < other.end && other.start < end)) continue;
-      if (found.length >= MAX_FINDINGS) {
+      // The cap is per rule, so one noisy rule never hides another rule's findings.
+      if (count >= MAX_FINDINGS) {
         truncated = true;
         break;
       }
+      count += 1;
       found.push({ rule: name, start, end, matchStart: match.index });
     }
   }
@@ -262,13 +279,19 @@ function privateKeyEnd(text, from) {
     const close = text.indexOf("-----", endMarker + 9);
     if (close !== -1) return close + 5;
   }
-  const keyLine = (line) => /^[A-Za-z0-9+/=]{4,200}$/.test(line) || /^[A-Za-z-]{2,30}: .{0,200}$/.test(line);
+  // Key lines may be indented (YAML) or quoted (Markdown "> "): the prefix is ignored when matching.
+  const body = (line) => line.replace(/\r$/, "").replace(/^[ \t]{0,40}(?:>[ \t]?){0,8}[ \t]{0,40}/, "");
+  const base64Line = (line) => /^[A-Za-z0-9+/=]{4,200}$/.test(body(line));
+  // Armor headers ("Version: …") come only before the first base64 line.
+  let headersAllowed = true;
+  const keyLine = (line) => base64Line(line) || (headersAllowed && /^[A-Za-z-]{2,30}: .{0,200}$/.test(body(line)));
   const lines = text.slice(from, from + 20_000).split("\n");
   let end = from + lines[0].length;
   for (let index = 1; index < lines.length; index += 1) {
-    const line = lines[index].replace(/\r$/, "");
+    const line = body(lines[index]);
+    if (base64Line(line)) headersAllowed = false;
     // A blank line belongs to the key only when key lines follow it (PGP armor puts one after its headers).
-    if (!keyLine(line) && !(line === "" && keyLine((lines[index + 1] ?? "").replace(/\r$/, "")))) break;
+    if (!keyLine(line) && !(line === "" && keyLine(lines[index + 1] ?? ""))) break;
     end += 1 + lines[index].length;
   }
   return end;
@@ -488,7 +511,7 @@ function messageText(message) {
 }
 
 /** A Python `re` pattern as a JS RegExp, or null when it uses something JS cannot match the same way. */
-function pythonRegex(pattern, global) {
+function pythonRegex(pattern, global, asciiOnly = true) {
   let body = pattern;
   let flags = global ? "g" : "";
   const inline = /^\(\?([a-zA-Z]+)\)/.exec(body);
@@ -500,7 +523,11 @@ function pythonRegex(pattern, global) {
     body = body.slice(inline[0].length);
   }
   if (/\(\?[aiLmsux]+[):]/.test(body) || /\(\?[>#]/.test(body)) return null;
-  if (flags.includes("m") && body.includes("\\A")) return null;
+  const escapes = [...body.matchAll(/\\(.)/gs)].map((match) => match[1]);
+  // Under (?m) Python's \A and \Z still mean the whole string; JS ^ and $ would mean each line.
+  if (flags.includes("m") && (escapes.includes("A") || escapes.includes("Z"))) return null;
+  // JS \w and \b are ASCII-only where Python's are Unicode, so they only match the same way on ASCII text.
+  if (!asciiOnly && escapes.some((char) => "wWbB".includes(char))) return null;
   // Escapes are read in pairs, so an escaped backslash before "A" stays a backslash.
   body = body
     .replace(/\\(.)/gs, (escape, char) => (char === "A" ? "^" : char === "Z" ? "$" : escape))
@@ -550,7 +577,7 @@ function applyCanvasUpdate(doc, update) {
     doc.content = replacement;
     return true;
   }
-  const regex = pythonRegex(pattern, Boolean(update.multiple));
+  const regex = pythonRegex(pattern, Boolean(update.multiple), !/[^\x00-\x7f]/.test(doc.content));
   if (!regex) return false;
   const render = pythonTemplate(replacement);
   let output = "";
@@ -766,6 +793,12 @@ function readDocuments(root, source) {
   const skipped = [];
   const skip = (path, reason) => skipped.push({ path: relative(root, path) || ".", reason });
   const walk = (folder) => {
+    // A folder named inside an agent home that resolves somewhere else (a symlinked plans/) is not followed.
+    const namedHome = homes.find((candidate) => isInsideAsWritten(folder, candidate));
+    if (namedHome && !isInside(folder, namedHome)) {
+      skip(folder, "Points outside its coding-agent folder; not read");
+      return;
+    }
     const home = homes.find((candidate) => isInside(folder, candidate));
     if (home && !isInside(folder, join(home, "plans"))) {
       // Inside a coding agent's home only plans/ is read: never sessions, transcripts, settings, or memory.
@@ -775,7 +808,11 @@ function readDocuments(root, source) {
       }
       const others = readdirSafe(folder).filter((name) => name !== "plans");
       if (others.length > 0) skip(folder, `${others.length} other files and folders in this coding-agent folder (sessions, settings, history) were not read; only plans/ is`);
-      if (existsSync(join(folder, "plans"))) walk(join(folder, "plans"));
+      const plans = join(folder, "plans");
+      if (existsSync(plans)) {
+        if (isInside(plans, home)) walk(plans);
+        else skip(plans, "plans/ points outside the coding-agent folder; not read");
+      }
       return;
     }
     let entries;
@@ -874,38 +911,45 @@ function entriesBesideExport(root, folder) {
   return others;
 }
 
-/** Reads one source with the reader its files call for. Several exports in one source are refused, never mixed or dropped. */
+/** Whether a folder holding conversation files also holds the other files of a Claude or ChatGPT export. */
+function looksLikeExport(folder) {
+  const names = new Set(readdirSafe(folder));
+  return ["users.json", "projects.json", "memories.json", "chat.html", "user.json", "export_manifest.json"].some((name) => names.has(name));
+}
+
+/**
+ * Reads one source with the reader its files call for. A source is an export
+ * only when its export files sit at its root (or under wrapper folders with
+ * nothing beside them). A conversations.json elsewhere in a document folder is
+ * listed as skipped, never parsed. Several exports in one source are refused.
+ */
 function readSource(source) {
   if (!existsSync(source.path) || !statSync(source.path).isDirectory()) fail(`${source.path} is not a folder. Unzip an export into its own empty folder first.`);
-  const folders = exportFolders(source.path);
-  const candidates = [];
-  for (const [folder, files] of folders) {
-    const first = readJson(files[0]);
-    const list = Array.isArray(first) ? first : Array.isArray(first?.conversations) ? first.conversations : [first];
-    const sample = list.find((entry) => entry && typeof entry === "object");
-    const siblings = new Set(readdirSafe(folder));
-    let kind = null;
-    if (sample && "chat_messages" in sample) kind = "claude";
-    else if (sample && "mapping" in sample) kind = "chatgpt";
-    else if (!sample && (siblings.has("users.json") || siblings.has("projects.json"))) kind = "claude";
-    else if (!sample && (siblings.has("chat.html") || siblings.has("user.json") || siblings.has("export_manifest.json"))) kind = "chatgpt";
-    if (kind) candidates.push({ folder, files, first, list, kind });
+  const exports = [...exportFolders(source.path)].filter(([folder]) => looksLikeExport(folder));
+  if (exports.length > 1) {
+    const names = exports.map(([folder]) => relative(source.path, folder) || ".").join(", ");
+    fail(`${source.path} holds ${exports.length} exports (${names}). Give each one its own --source with its own --account.`);
   }
-  if (candidates.length > 1) {
-    const names = candidates.map(({ folder }) => relative(source.path, folder) || ".").join(", ");
-    fail(`${source.path} holds ${candidates.length} exports (${names}). Give each one its own --source with its own --account.`);
-  }
-  if (candidates.length === 0) return { ...readDocuments(source.path, { ...source, origin: source.origin ?? "files" }), kind: "documents" };
+  const documents = () => ({ ...readDocuments(source.path, { ...source, origin: source.origin ?? "files" }), kind: "documents" });
+  if (exports.length === 0 || entriesBesideExport(source.path, exports[0][0]).length > 0) return documents();
 
-  const [{ folder, files, first, list, kind }] = candidates;
-  const others = entriesBesideExport(source.path, folder).map((path) => ({ path: relative(source.path, path), reason: "Beside an export in the same source; give it its own --source to read it" }));
+  const [[folder, files]] = exports;
+  const first = readJson(files[0]);
+  const list = Array.isArray(first) ? first : Array.isArray(first?.conversations) ? first.conversations : [first];
+  const sample = list.find((entry) => entry && typeof entry === "object");
+  const siblings = new Set(readdirSafe(folder));
+  let kind = null;
+  if (sample && "chat_messages" in sample) kind = "claude";
+  else if (sample && "mapping" in sample) kind = "chatgpt";
+  else if (!sample && (siblings.has("users.json") || siblings.has("projects.json"))) kind = "claude";
+  else if (!sample && (siblings.has("chat.html") || siblings.has("user.json") || siblings.has("export_manifest.json"))) kind = "chatgpt";
+  if (!kind) return documents();
   if (kind === "claude") {
-    if (files.length > 1) others.push({ path: relative(source.path, files[1]), reason: "A Claude export has one conversations.json; extra files were not read" });
+    const extra = files.slice(1).map((path) => ({ path: relative(source.path, path), reason: "A Claude export has one conversations.json; extra files were not read" }));
     const result = readClaudeExport(folder, { ...source, origin: source.origin ?? "claude" }, list);
-    return { ...result, skipped: [...others, ...result.skipped], kind: "claude-export" };
+    return { ...result, skipped: [...extra, ...result.skipped], kind: "claude-export" };
   }
-  const result = readChatGptExport(folder, { ...source, origin: source.origin ?? "chatgpt" }, files, first);
-  return { ...result, skipped: [...others, ...result.skipped], kind: "chatgpt-export" };
+  return { ...readChatGptExport(folder, { ...source, origin: source.origin ?? "chatgpt" }, files, first), kind: "chatgpt-export" };
 }
 
 // ---------- Scan ----------
@@ -919,6 +963,23 @@ function previousInventory(out) {
   const inventory = readJson(join(out, "inventory.json"));
   if (!Array.isArray(inventory?.items)) fail(`${join(out, "inventory.json")} is not an inventory; use an empty folder`);
   return inventory;
+}
+
+/**
+ * An item's file path from an inventory, only when it is `items/<key>.<ext>`
+ * and really inside <out>/items (no "..", no symlink out). Otherwise null.
+ */
+function trustedItemPath(out, path, key) {
+  if (typeof path !== "string" || typeof key !== "string") return null;
+  const match = /^items\/(imp-[0-9a-f]{12})\.[a-z0-9]{1,10}$/.exec(path);
+  if (!match || match[1] !== key) return null;
+  const full = join(out, path);
+  try {
+    if (!lstatSync(full).isFile()) return null;
+  } catch {
+    return null;
+  }
+  return isInside(full, join(out, "items")) ? path : null;
 }
 
 function sizeNote(format) {
@@ -975,13 +1036,15 @@ function scan(options) {
       }
       const key = `imp-${hash.slice(0, 12)}`;
       const notes = [...item.notes];
-      let path = join("items", `${key}${item.filePath ? extname(item.filePath).toLowerCase() || ".bin" : extensionFor(item.format)}`);
+      let path = `items/${key}${item.filePath ? extname(item.filePath).toLowerCase().replace(/[^.a-z0-9]/g, "") || ".bin" : extensionFor(item.format)}`;
       let text = item.content;
       let redacted = false;
       const earlier = redactedBefore.get(key);
-      if (earlier && typeof earlier.path === "string" && existsSync(join(options.out, earlier.path))) {
+      const earlierPath = earlier ? trustedItemPath(options.out, earlier.path, key) : null;
+      if (earlier && !earlierPath) notes.push("The earlier inventory's file for this item was not trusted, so it was extracted again; redact it again if needed");
+      if (earlierPath) {
         // A re-run keeps the redacted copy instead of extracting the source again.
-        path = earlier.path;
+        path = earlierPath;
         text = readFileSync(join(options.out, path), "utf8");
         redacted = true;
       } else if (item.filePath) copyFileSync(item.filePath, join(options.out, path));
@@ -989,7 +1052,7 @@ function scan(options) {
       const tooLarge = !item.filePath && (text.length > MAX_CONTENT_CHARS || Buffer.byteLength(text, "utf8") > MAX_CONTENT_BYTES);
       if (tooLarge) notes.push(sizeNote(item.format));
       const secrets = item.filePath ? { findings: [], truncated: false } : scanSecrets(text);
-      if (secrets.truncated) notes.push(`More than ${MAX_FINDINGS} possible secrets; only the first ${MAX_FINDINGS} are listed`);
+      if (secrets.truncated) notes.push(`More than ${MAX_FINDINGS} possible secrets of one kind; only the first ${MAX_FINDINGS} of each kind are listed, and more remain`);
       byHash.set(hash, {
         key,
         // The hash of the source item. A later redaction changes the file, not this hash or the key.
@@ -1050,7 +1113,9 @@ function redact(options) {
   const item = (inventory.items ?? []).find((entry) => entry.key === options.key);
   if (!item) fail(`no item ${options.key} in ${inventoryPath}`);
   if (item.binary) fail(`${options.key} is a binary file; skip it instead`);
-  const path = join(options.out, item.path);
+  const trusted = trustedItemPath(options.out, item.path, item.key);
+  if (!trusted) fail(`${options.key} has a file path outside ${join(options.out, "items")}; run scan again into an empty folder`);
+  const path = join(options.out, trusted);
   const redacted = redactText(readFileSync(path, "utf8"), options.rules);
   writeFileSync(path, redacted);
   item.secrets = scanSecrets(redacted).findings;
