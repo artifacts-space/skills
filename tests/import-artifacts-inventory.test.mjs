@@ -102,6 +102,11 @@ before(() => {
   write(join(root, "plans", "notes.json"), "{ not json");
   write(join(root, "plans", ".env"), "SECRET=x");
   write(join(root, "plans", "node_modules", "pkg", "README.md"), "# Not mine");
+  write(join(root, "plans", "diagram.pdf"), "%PDF-1.4 synthetic");
+  write(join(root, "plans", "page.html"), "<p>repository page</p>");
+  write(join(root, "plans", "big.md"), `# Big\n${"x".repeat(1_100_000)}`);
+  write(join(root, "plans", "old-export", "conversations.json"), "[]");
+  write(join(root, "plans", "session.jsonl"), "{}");
 });
 
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -163,6 +168,38 @@ describe("inventory scan", () => {
     run("scan", "--out", repo, "--source", join(root, "downloads"), "--origin", "files");
     assert.deepEqual(inventory(downloads).items.map((item) => item.format), [{ kind: "code", language: "python" }]);
     assert.equal(inventory(repo).items.length, 0);
+  });
+
+  it("should copy binary files and skip export files, repository HTML, and transcripts", () => {
+    const out = join(root, "out-6");
+    run("scan", "--out", out, "--source", join(root, "plans"), "--origin", "cursor");
+    const { items, skipped } = inventory(out);
+    const pdf = items.find((item) => item.title === "diagram.pdf");
+    assert.equal(pdf.binary, true);
+    assert.equal(pdf.contentType, "application/pdf");
+    assert.equal(readFileSync(join(out, pdf.path), "utf8"), "%PDF-1.4 synthetic");
+    assert.ok(pdf.notes.some((note) => /not scanned/.test(note)));
+    assert.ok(skipped.some((entry) => entry.path === join("old-export", "conversations.json")));
+    assert.ok(skipped.some((entry) => entry.path === "session.jsonl"));
+    assert.ok(!items.some((item) => item.title === "page"));
+    assert.ok(items.find((item) => item.title === "Big").notes.some((note) => /1 MB/.test(note)));
+  });
+
+  it("should redact only the rules named with --rules", () => {
+    const out = join(root, "out-7");
+    run("scan", "--out", out, "--source", join(root, "plans"));
+    const plan = inventory(out).items.find((item) => item.title === "Rollout plan");
+    run("redact", "--out", out, "--key", plan.key, "--rules", "connection-string");
+    const after = inventory(out).items.find((item) => item.key === plan.key);
+    assert.ok(!after.secrets.some((finding) => finding.rule === "connection-string"));
+    assert.ok(after.secrets.some((finding) => finding.rule === "aws-access-key"));
+    assert.equal(after.sourceSha256, plan.sourceSha256);
+  });
+
+  it("should reject bad arguments with a message", () => {
+    assert.throws(() => run("scan", "--source", join(root, "plans")), /--out is required/);
+    assert.throws(() => run("scan", "--out", join(root, "out-8"), "--source", join(root, "plans"), "--origin", "gemini"), /--origin must be one of/);
+    assert.throws(() => run("scan", "--account", "work", "--out", join(root, "out-8")), /follow a --source/);
   });
 
   it("should refuse an output folder inside a source", () => {

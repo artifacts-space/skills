@@ -93,9 +93,11 @@ node <skill-folder>/scripts/inventory.mjs scan --out ~/artifact-imports/inventor
 
 It detects Claude and ChatGPT exports, keeps the final version of each
 artifact and canvas, and reads document folders while skipping `node_modules`,
-hidden folders, and credential files. A document folder takes documents,
-PDFs, images, and Office files; it takes code files only with `--origin claude`
-or `chatgpt`, for a folder of downloaded artifacts. It writes `inventory.json` and one file
+hidden folders, credential files, and export files that hold conversations
+(`conversations.json`, `chat.html`, `*.jsonl`), which it lists as skipped. A
+document folder takes documents, PDFs, images, and Office files; it takes code
+and HTML files only with `--origin claude` or `chatgpt`, for a folder of
+downloaded artifacts. It writes `inventory.json` and one file
 per item under `items/`, and prints a table. Each item has a `key` (`imp-` and
 12 characters of its content hash), title, origin, account labels, original
 date, size, a format guess, a suggested project, secret findings, and notes.
@@ -174,7 +176,8 @@ For each picked item, in date order:
   `Imported from Claude (work). Created 2025-03-14. imp-3f9a1c2b7d4e`;
   `tags` and `project` as the user confirmed; `source` is your agent name, as
   for any save; `metadata` holds
-  `{ "import": { "key", "sha256", "origin", "accounts", "originalCreatedAt", "originalUrl" } }`.
+  `{ "import": { "key", "sourceSha256", "origin", "accounts", "originalCreatedAt", "originalUrl" } }`.
+  `sourceSha256` is the hash of the original item, before any redaction.
   Leave out the local paths and conversation titles.
 - **Binary items and text over 1 MB:** upload with `files_request_upload`, a
   PUT of the bytes, and `files_finalize`, then `files_create_artifact` with the

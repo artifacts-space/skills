@@ -15,6 +15,7 @@
 
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 
 const MAX_TEXT_BYTES = 1_048_576; // artifacts.space content limit per artifact
@@ -39,12 +40,12 @@ const CREDENTIAL_FILES = /^(?:\.env(?:\..*)?|.*\.pem|.*\.key|.*\.p12|.*\.pfx|.*\
 const SKIP_DIRS = new Set(["node_modules", "dist", "build", "out", "vendor", "target", "coverage", "__pycache__"]);
 const TEXT_FORMATS = {
   ".md": { kind: "markdown" }, ".mdx": { kind: "markdown" }, ".markdown": { kind: "markdown" },
-  ".txt": { kind: "text" }, ".log": { kind: "text" },
+  ".txt": { kind: "text" },
   ".json": { kind: "json" }, ".csv": { kind: "csv" }, ".svg": { kind: "svg" },
   ".mmd": { kind: "mermaid" }, ".mermaid": { kind: "mermaid" },
-  ".html": { kind: "code", language: "html" }, ".htm": { kind: "code", language: "html" },
-  ".jsx": { kind: "code", language: "jsx" }, ".tsx": { kind: "code", language: "tsx" },
 };
+// Files in a data export that hold conversations or account data. A folder of documents never imports them.
+const EXPORT_FILES = /^(?:(?:conversations(?:-\d+)?|users?|projects|memories|export_manifest|shared_conversations|message_feedback|user_settings|library[-_]files|group_chats|conversation_asset_file_names)\.json|chat\.html|.*\.jsonl(?:\.zst)?)$/i;
 const FILE_TYPES = {
   ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
   ".webp": "image/webp", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -56,7 +57,11 @@ const LANGUAGE_EXTENSIONS = {
   bash: ".sh", shell: ".sh", sh: ".sh", sql: ".sql", go: ".go", rust: ".rs", java: ".java", ruby: ".rb", yaml: ".yml",
   swift: ".swift", kotlin: ".kt", c: ".c", cpp: ".cpp", csharp: ".cs", php: ".php", markdown: ".md",
 };
-const CODE_FORMATS = new Map(Object.entries(LANGUAGE_EXTENSIONS).filter(([language]) => language !== "markdown").map(([language, extension]) => [extension, { kind: "code", language }]));
+// Code files count only in a folder of artifacts downloaded from Claude or ChatGPT.
+const DOWNLOAD_FORMATS = new Map([
+  ...Object.entries(LANGUAGE_EXTENSIONS).filter(([language]) => language !== "markdown").map(([language, extension]) => [extension, { kind: "code", language }]),
+  [".htm", { kind: "code", language: "html" }],
+]);
 const ORIGINS = new Set(["claude", "chatgpt", "claude-code", "codex", "cursor", "files"]);
 
 /** Fails with a message for the person running the script. */
@@ -97,7 +102,13 @@ const toIso = (value) => {
 function findFiles(root, test, depth = 3) {
   const found = [];
   const walk = (folder, level) => {
-    for (const entry of readdirSync(folder, { withFileTypes: true })) {
+    let entries;
+    try {
+      entries = readdirSync(folder, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
       const path = join(folder, entry.name);
       if (entry.isFile() && test(entry.name)) found.push(path);
       else if (entry.isDirectory() && level < depth && !entry.name.startsWith(".")) walk(path, level + 1);
@@ -371,13 +382,17 @@ function chatGptReports(root, source) {
 }
 
 /** The repository folder name above a file, for a project suggestion. */
-function repositoryName(path, stopAt) {
+/**
+ * The repository folder name above a file, for a project suggestion. It may
+ * look above the source (a docs/ folder inside a repository), but stops
+ * below the home folder, so a dotfiles repository there never counts.
+ */
+function repositoryName(path) {
+  const home = homedir();
   let folder = dirname(path);
-  while (folder.startsWith(stopAt) || stopAt.startsWith(folder)) {
+  while (folder !== home && dirname(folder) !== folder) {
     if (existsSync(join(folder, ".git"))) return basename(folder);
-    const parent = dirname(folder);
-    if (parent === folder) break;
-    folder = parent;
+    folder = dirname(folder);
   }
   return null;
 }
@@ -404,8 +419,16 @@ function readDocuments(root, source) {
   const downloads = source.origin === "claude" || source.origin === "chatgpt";
   const items = [];
   const skipped = [];
+  const skip = (path, reason) => skipped.push({ path: relative(root, path) || ".", reason });
   const walk = (folder) => {
-    for (const entry of readdirSync(folder, { withFileTypes: true })) {
+    let entries;
+    try {
+      entries = readdirSync(folder, { withFileTypes: true });
+    } catch {
+      skip(folder, "Could not be read");
+      return;
+    }
+    for (const entry of entries) {
       const path = join(folder, entry.name);
       if (entry.isDirectory()) {
         if (!entry.name.startsWith(".") && !SKIP_DIRS.has(entry.name)) walk(path);
@@ -413,31 +436,47 @@ function readDocuments(root, source) {
       }
       if (!entry.isFile()) continue;
       if (CREDENTIAL_FILES.test(entry.name)) {
-        skipped.push({ path: relative(root, path), reason: "Looks like a credential file; never imported" });
+        skip(path, "Looks like a credential file; never imported");
+        continue;
+      }
+      if (EXPORT_FILES.test(entry.name)) {
+        skip(path, "Looks like conversation or account data from an export; conversations are never imported");
         continue;
       }
       const extension = extname(entry.name).toLowerCase();
-      const textFormat = TEXT_FORMATS[extension] ?? (downloads ? CODE_FORMATS.get(extension) : undefined);
+      const textFormat = TEXT_FORMATS[extension] ?? (downloads ? DOWNLOAD_FORMATS.get(extension) : undefined);
       const fileType = FILE_TYPES[extension];
       if (!textFormat && !fileType) continue;
       if (items.length >= MAX_DOCS) fail(`more than ${MAX_DOCS} documents under ${root}; pick a smaller folder`);
-      const stats = statSync(path);
+      let stats;
+      try {
+        stats = statSync(path);
+      } catch {
+        skip(path, "Could not be read");
+        continue;
+      }
       const base = {
         type: "document",
         createdAt: stats.mtime.toISOString(),
         originalUrl: null,
         originalPath: path,
         conversationTitle: "",
-        suggestedProject: repositoryName(path, root),
+        suggestedProject: repositoryName(path),
         notes: [],
         source,
       };
       if (stats.size > MAX_FILE_BYTES) {
-        skipped.push({ path: relative(root, path), reason: "Larger than the 25 MB file limit" });
+        skip(path, "Larger than the 25 MB file limit");
         continue;
       }
       if (textFormat) {
-        const text = readFileSync(path, "utf8");
+        let text;
+        try {
+          text = readFileSync(path, "utf8");
+        } catch {
+          skip(path, "Could not be read");
+          continue;
+        }
         const format = textFormat.kind === "json" && !parsesAsJson(text) ? { kind: "text" } : { ...textFormat };
         items.push({ ...base, title: documentTitle(text, path), content: text, format });
       } else {
@@ -512,7 +551,8 @@ function scan(options) {
       if (!item.filePath && sizeBytes > MAX_TEXT_BYTES) notes.push("Over the 1 MB content limit: upload it as a file or split it");
       byHash.set(hash, {
         key,
-        sha256: hash,
+        // The hash of the source item. A later redaction changes the file, not this hash or the key.
+        sourceSha256: hash,
         title: item.title.slice(0, 160),
         type: item.type,
         origin: item.source.origin,
@@ -549,6 +589,9 @@ function printTable(inventory, out) {
   const withSecrets = inventory.items.filter((item) => item.secrets.length > 0).length;
   const multiOwner = inventory.sources.filter((source) => source.owners > 1).length;
   console.log(`\n${inventory.items.length} items, ${inventory.duplicatesMerged} duplicates merged, ${withSecrets} with possible secrets, ${inventory.skipped.length} files skipped.`);
+  if (inventory.skipped.some((entry) => entry.reason.startsWith("Looks like conversation"))) {
+    console.log("Some skipped files look like a data export the script did not recognise: check that each export is unzipped into its own folder.");
+  }
   if (multiOwner > 0) console.log(`${multiOwner} export(s) hold more than one person's conversations: confirm which items the user may import.`);
   console.log(`Inventory: ${join(out, "inventory.json")}`);
 }
