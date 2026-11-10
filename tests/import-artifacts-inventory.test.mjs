@@ -206,10 +206,12 @@ describe("inventory scan", () => {
       {
         id: "conv-4",
         title: "Broken canvas",
-        current_node: "b1",
+        current_node: "b2",
         mapping: {
           root: { id: "root", parent: null, message: null },
-          b1: { id: "b1", parent: "root", message: { author: { role: "assistant" }, recipient: "canmore.create_textdoc", create_time: 1, content: { parts: ["{ cut off"] } } },
+          b0: { id: "b0", parent: "root", message: { author: { role: "assistant" }, recipient: "canmore.create_textdoc", create_time: 1, content: { parts: [JSON.stringify({ name: "Kept", content: "Kept as written" })] } } },
+          b1: { id: "b1", parent: "b0", message: { author: { role: "assistant" }, recipient: "canmore.create_textdoc", create_time: 2, content: { parts: ["{ cut off"] } } },
+          b2: { id: "b2", parent: "b1", message: { author: { role: "assistant" }, recipient: "canmore.update_textdoc", create_time: 3, content: { parts: [JSON.stringify({ updates: [{ pattern: ".*", replacement: "Meant for the broken canvas" }] })] } } },
         },
       },
     ]);
@@ -226,7 +228,9 @@ describe("inventory scan", () => {
     assert.match(reasons, /Report "Folder report" could not be read/);
     assert.match(reasons, /Report "Huge report" is larger than the 25 MB file limit/);
     assert.match(reasons, /1 canvas document\(s\) could not be read/);
-    assert.equal(inventory(out).items.length, 0);
+    const [kept] = inventory(out).items;
+    assert.equal(inventory(out).items.length, 1);
+    assert.equal(readFileSync(join(out, kept.path), "utf8"), "Kept as written");
   });
 
   it("should stop with a message when an export file is cut short", () => {

@@ -317,13 +317,17 @@ function canvasDocuments(conversation) {
     try {
       input = JSON.parse(messageText(message));
     } catch {
-      if (creates) unreadable += 1;
-      else current?.notes.add(replayFailed);
+      if (creates) {
+        // Edits that follow belong to the canvas that could not be read, not the one before it.
+        unreadable += 1;
+        current = null;
+      } else current?.notes.add(replayFailed);
       continue;
     }
     if (creates) {
       if (typeof input?.content !== "string") {
         unreadable += 1;
+        current = null;
         continue;
       }
       current = { id: null, name: input.name ?? "", type: input.type ?? "document", content: input.content, createdAt: message.create_time, notes: new Set() };
