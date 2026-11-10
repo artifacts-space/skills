@@ -6,13 +6,13 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { applyCanvasUpdate, documentTitle, fitTitle, redactText, scanSecrets, SECRET_RULES } from "../skills/import-artifacts/scripts/inventory.mjs";
+import { applyCanvasUpdate, documentTitle, fitTitle, isInsideAsWritten, redactText, scanSecrets, SECRET_RULES } from "../skills/import-artifacts/scripts/inventory.mjs";
 
 const script = fileURLToPath(new URL("../skills/import-artifacts/scripts/inventory.mjs", import.meta.url));
 
@@ -624,6 +624,8 @@ describe("document size and project suggestions", () => {
     const source = folder("too-big-doc");
     write(join(source, "huge.md"), "");
     truncateSync(join(source, "huge.md"), 25 * 1024 * 1024 + 1);
+    // Unreadable, so a scan that read the file before checking its size would list "Could not be read" instead.
+    chmodSync(join(source, "huge.md"), 0o000);
     write(join(source, "small.md"), "# Small\n");
     run(["scan", "--out", out("too-big-doc"), "--source", source]);
     const { items, skipped } = inventory(out("too-big-doc"));
@@ -635,20 +637,29 @@ describe("document size and project suggestions", () => {
     const repo = folder("suggest-repo");
     mkdirSync(join(repo, ".git"), { recursive: true });
     write(join(repo, "docs", "plan.md"), "# Plan\n");
+    write(join(repo, "notes.md"), "# Root notes\n");
     write(join(repo, "inner", ".git", "HEAD"), "ref");
     write(join(repo, "inner", "notes.md"), "# Inner notes\n");
     run(["scan", "--out", out("suggest-repo-root"), "--source", repo]);
     const fromRoot = Object.fromEntries(inventory(out("suggest-repo-root")).items.map((item) => [item.title, item.suggestedProject]));
-    assert.deepEqual(fromRoot, { Plan: "suggest-repo", "Inner notes": "inner" });
+    assert.deepEqual(fromRoot, { Plan: "suggest-repo", "Root notes": "suggest-repo", "Inner notes": "inner" });
     run(["scan", "--out", out("suggest-repo-docs"), "--source", join(repo, "docs")]);
     assert.equal(inventory(out("suggest-repo-docs")).items[0].suggestedProject, null, "a .git above the source is never used");
   });
 
   it("should not treat a folder whose name only starts with the source name as inside it", () => {
-    const source = folder("prefix");
-    write(join(source, "plan.md"), "# Plan\n");
-    mkdirSync(join(folder("prefixed"), ".git"), { recursive: true });
-    run(["scan", "--out", out("prefix"), "--source", source]);
-    assert.equal(inventory(out("prefix")).items[0].suggestedProject, null);
+    assert.equal(isInsideAsWritten(join(root, "prefixed"), join(root, "prefix")), false);
+    assert.equal(isInsideAsWritten(join(root, "prefix", "docs"), join(root, "prefix")), true);
+    assert.equal(isInsideAsWritten(join(root, "prefix"), join(root, "prefix")), true);
+  });
+
+  it("should never suggest the home folder's own repository, even with the home folder as the source", () => {
+    const home = folder("dotfiles-home");
+    mkdirSync(join(home, ".git"), { recursive: true });
+    write(join(home, "notes.md"), "# Home notes\n");
+    run(["scan", "--out", out("dotfiles-home"), "--source", home], { HOME: home });
+    const [item] = inventory(out("dotfiles-home")).items;
+    assert.equal(item.title, "Home notes");
+    assert.equal(item.suggestedProject, null);
   });
 });

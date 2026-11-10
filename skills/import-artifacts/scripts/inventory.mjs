@@ -776,11 +776,13 @@ function readdirSafe(folder) {
 /**
  * The repository folder name above a file, for a project suggestion. It looks
  * only inside the source folder (the source itself included), so a .git in a
- * parent folder such as the home folder never names a project.
+ * parent folder never names a project. The home folder itself never counts,
+ * even as the source: a dotfiles repository there would only name the account.
  */
 function repositoryName(path, root) {
+  const home = realish(homedir());
   let folder = dirname(path);
-  while (isInsideAsWritten(folder, root)) {
+  while (isInsideAsWritten(folder, root) && realish(folder) !== home) {
     if (existsSync(join(folder, ".git"))) return basename(folder);
     const parent = dirname(folder);
     if (parent === folder) break;
@@ -1131,7 +1133,7 @@ function redact(options) {
 }
 
 // For tests: the pure helpers, without running the command line.
-export { applyCanvasUpdate, documentTitle, fitTitle, redactText, scanSecrets, SECRET_RULES };
+export { applyCanvasUpdate, documentTitle, fitTitle, isInsideAsWritten, redactText, scanSecrets, SECRET_RULES };
 
 const invokedDirectly = Boolean(process.argv[1]) && realish(process.argv[1]) === realish(fileURLToPath(import.meta.url));
 const options = invokedDirectly ? parseArgs(process.argv.slice(2)) : null;
