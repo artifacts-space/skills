@@ -189,6 +189,16 @@ describe("inventory scan", () => {
     assert.ok(item.notes.some((note) => /could not be replayed/.test(note)));
   });
 
+  it("should list a library file that is not a list as skipped", () => {
+    const folder = join(root, "chatgpt-odd-library");
+    write(join(folder, "user.json"), { id: "user-test" });
+    write(join(folder, "conversations.json"), []);
+    write(join(folder, "library_files.json"), { files: [] });
+    const out = join(root, "out-12");
+    run("scan", "--out", out, "--source", folder);
+    assert.ok(inventory(out).skipped.some((entry) => entry.path === "library_files.json" && /Not a list/.test(entry.reason)));
+  });
+
   it("should stop with a message when an export file is cut short", () => {
     const folder = join(root, "chatgpt-truncated");
     write(join(folder, "user.json"), { id: "user-test" });

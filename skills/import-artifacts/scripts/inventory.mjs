@@ -331,9 +331,10 @@ function canvasDocuments(conversation) {
   return docs;
 }
 
-/** How many canvas documents a conversation creates on every branch, not only the active one. */
-function canvasCreateCount(conversation) {
-  return Object.values(conversation.mapping ?? {}).filter((node) => node?.message?.author?.role === "assistant" && node.message.recipient === "canmore.create_textdoc").length;
+/** How many canvas documents a conversation creates on branches other than the active one. */
+function offBranchCanvasCount(conversation) {
+  const onBranch = new Set(activeBranch(conversation));
+  return Object.values(conversation.mapping ?? {}).filter((node) => node?.message && !onBranch.has(node.message) && node.message.author?.role === "assistant" && node.message.recipient === "canmore.create_textdoc").length;
 }
 
 function readChatGptExport(root, source, shards) {
@@ -346,7 +347,7 @@ function readChatGptExport(root, source, shards) {
       if (!conversation?.mapping) continue;
       const id = conversation.conversation_id ?? conversation.id;
       const docs = canvasDocuments(conversation);
-      const offBranch = canvasCreateCount(conversation) - docs.length;
+      const offBranch = offBranchCanvasCount(conversation);
       if (offBranch > 0) {
         skipped.push({ path: `ChatGPT conversation "${conversation.title ?? id}"`, reason: `${offBranch} canvas document(s) on an earlier branch of the conversation were not read; only the branch the user last viewed is` });
       }
