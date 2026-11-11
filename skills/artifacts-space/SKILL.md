@@ -127,10 +127,13 @@ this as `editPending`.
 ### Always pass the version you read
 
 People edit artifacts in the web app while you work, and a person's work wins
-over yours. `artifacts_get` returns a `baseVersion` with the content you read,
-and every save (`artifacts_create`, `artifacts_update`,
-`artifacts_restore_version`, `files_create_artifact`, `files_attach`, and
-`files_replace`) returns the new one in its result.
+over yours. `artifacts_get` returns a `baseVersion` with the content you read.
+Every tool that saves an artifact returns the new one in its result:
+`artifacts_create`, `artifacts_update`, `artifacts_restore_version`,
+`files_create_artifact`, `files_attach`, `files_replace`, and `files_delete`
+(when the file was in an artifact). The result shows your own save, and its
+`baseVersion` matches that content, even when someone saved again right
+after you.
 
 - Pass that `baseVersion` with every `artifacts_update` and
   `artifacts_restore_version`. Use the one from the content you actually
