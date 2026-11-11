@@ -135,9 +135,10 @@ result: `artifacts_create`, `artifacts_update`, `artifacts_restore_version`,
 `baseVersion` matches that content, even when someone saved again right after
 you; then a later update with it is refused as `artifact_changed`, and you
 read the artifact again. An `artifacts_update` that only changes the project,
-tags, full width, sharing, or comments saves nothing (`edit` is "unchanged";
-a sharing request reports in `sharing`) and returns no `baseVersion`: keep the
-one you have.
+tags, full width, sharing, or comments saves nothing (`edit: "unchanged"`; a
+sharing request's outcome, including one waiting for approval, comes back in
+`sharing`), returns no `baseVersion`, and never needs one: keep the one you
+have.
 
 - Pass that `baseVersion` with every `artifacts_update` and
   `artifacts_restore_version`. Use the one from the content you actually
@@ -156,13 +157,13 @@ one you have.
   changes into what you get, and save with its `baseVersion`. If the person
   is typing right now and you change the title, content, or format, you get
   `artifact_being_edited` instead. Only artifacts that agents saved last take
-  saves without one, and updates that only change the project, tags, full
-  width, sharing, or comments never need one.
-- `artifact_being_edited` comes only when a save sends no `baseVersion`
-  while a person is typing in the artifact; their latest words are not saved
-  yet. A save with a `baseVersion` never gets it. If you see it, read the
-  artifact with `artifacts_get` and save with its `baseVersion`, or wait a
-  minute, or tell the person what you want to change.
+  saves without one.
+- `artifact_being_edited` comes only when a save sends no `baseVersion` and
+  changes the title, content, or format while a person is typing in the
+  artifact; their latest words are not saved yet. A save with a `baseVersion`
+  never gets it. If you see it, read the artifact with `artifacts_get` and
+  save with its `baseVersion`, or wait a minute, or tell the person what you
+  want to change.
 - When your save does land and the person was editing too, their next save
   still wins; your version stays in History (`artifacts_versions`).
 
