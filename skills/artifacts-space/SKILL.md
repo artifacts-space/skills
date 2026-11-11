@@ -138,9 +138,9 @@ tools take no `baseVersion` and are never refused for one.
 
 An `artifacts_update` that changes only metadata (`project`, `tags`,
 `addTags`, `removeTags`, `fullWidth`, `visibility`, `team`, `comments`) saves
-nothing. Its result says `edit: "unchanged"` and has no `baseVersion`. It
-ignores any `baseVersion` you send, so sending the one you have is harmless;
-keep it for your next save. A sharing request's outcome, including one that
+nothing. Its result says `edit: "unchanged"` and has no `baseVersion`. It is
+never refused for a missing `baseVersion` and ignores any you send, so sending
+the one you have is harmless; keep it for your next save. A sharing request's outcome, including one that
 waits for approval, comes back in `sharing`. Any other field, `sessionId` and
 `source` included, makes the update a save.
 
@@ -158,11 +158,11 @@ waits for approval, comes back in `sharing`. Any other field, `sessionId` and
   `baseVersion` is refused with `base_version_required` whenever a person saved
   the artifact last, whatever it changes in the artifact itself (`content`,
   `kind`, `title`, `summary`, `icon`, `theme`, `cover`, or any other field it
-  saves): you never saw what they wrote. If the
-  person is typing, it may get `artifact_being_edited` instead (next point).
-  Either way, read the artifact with `artifacts_get`, merge your changes into
-  what you get, and save with its `baseVersion`. Only artifacts that agents
-  saved last take saves without one.
+  saves): you never saw what they wrote. If the person is typing, it may get
+  `artifact_being_edited` instead (next point). Either way, read the artifact
+  with `artifacts_get`, merge your changes into what you get, and save with
+  its `baseVersion`. Only artifacts that agents saved last take saves without
+  one.
 - `artifact_being_edited` comes only when a save sends no `baseVersion` and
   changes the `title`, `content`, or `kind` (format) while a person is typing
   in the artifact; their latest words are not saved yet. A save with a
