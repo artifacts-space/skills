@@ -133,14 +133,15 @@ result: `artifacts_create`, `artifacts_update`, `artifacts_restore_version`,
 `files_create_artifact`, `files_attach`, `files_replace`, and `files_delete`
 (when the file was in an artifact). The result shows your own save, and its
 `baseVersion` matches that content, even when someone saved again right after
-you.
+you; your next update then gets `artifact_changed` (below). The `files_*`
+tools take no `baseVersion` and are never refused for one.
 
-An `artifacts_update` that only changes `project`, `tags` (or `addTags` and
-`removeTags`), `fullWidth`, `visibility` and `team`, or `comments` saves
-nothing. Its result says `edit: "unchanged"` and has no `baseVersion`. It
-never needs a `baseVersion` either, so keep the one you have. A sharing
-request's outcome, including one that waits for approval, comes back in
-`sharing`.
+An `artifacts_update` that changes only some of `project`, `tags` (`addTags`,
+`removeTags`), `fullWidth`, `visibility`, `team`, and `comments` saves nothing.
+Its result says `edit: "unchanged"` and has no `baseVersion`. It ignores any
+`baseVersion` you send, so sending the one you have is harmless; keep it for
+your next save. A sharing request's outcome, including one that waits for
+approval, comes back in `sharing`.
 
 - Pass that `baseVersion` with every `artifacts_update` and
   `artifacts_restore_version`. Use the one from the content you actually
@@ -155,12 +156,11 @@ request's outcome, including one that waits for approval, comes back in
 - A save without a `baseVersion` is refused with `base_version_required`
   whenever a person saved the artifact last, whatever it changes in the
   artifact itself (`content`, `kind`, `title`, `summary`, `icon`, `theme`,
-  `cover`, or any other field it saves): you never saw what they wrote. When
-  the save without a `baseVersion` changes the `title`, `content`, or `kind`
-  while the person is typing, it gets `artifact_being_edited` instead (next
-  point). Either way, read the artifact with `artifacts_get`, merge your
-  changes into what you get, and save with its `baseVersion`. Only artifacts
-  that agents saved last take saves without one.
+  `cover`, or any other field it saves): you never saw what they wrote. If the
+  person is typing, it may get `artifact_being_edited` instead (next point).
+  Either way, read the artifact with `artifacts_get`, merge your changes into
+  what you get, and save with its `baseVersion`. Only artifacts that agents
+  saved last take saves without one.
 - `artifact_being_edited` comes only when a save sends no `baseVersion` and
   changes the `title`, `content`, or `kind` (format) while a person is typing
   in the artifact; their latest words are not saved yet. A save with a
