@@ -176,7 +176,9 @@ create, check artifacts.space:
 2. `artifacts_list` with `query` set to the title. A different artifact with
    the same title is not a duplicate: ask whether to skip, import it as new,
    or replace that artifact's content with `artifacts_update` (the old content
-   stays in its version history).
+   stays in its version history). Read it with `artifacts_get` first and pass
+   its `baseVersion`; if the update is refused because it changed, read it
+   again and ask before replacing.
 
 A re-run finds earlier imports as long as their summary still holds the key.
 
@@ -209,7 +211,8 @@ For each picked item, in date order:
   and `.json` text but no code, HTML, SVG, or Mermaid files, so upload those
   under a `.txt` name (as `uploadAs` says) or skip them with the user's OK.
   `files_create_artifact` takes no tags or metadata: set both in one
-  `artifacts_update` call right after. Files are limited to 25 MB. Split a
+  `artifacts_update` call right after, with the `baseVersion` from the
+  `files_create_artifact` result. Files are limited to 25 MB. Split a
   large text item into parts only if the user agrees.
 - **Limits.** A limit error says when to try again. Wait that long; never
   retry in a loop. A storage quota error ends the import: stop and tell the
