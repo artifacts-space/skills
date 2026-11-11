@@ -133,12 +133,15 @@ result: `artifacts_create`, `artifacts_update`, `artifacts_restore_version`,
 `files_create_artifact`, `files_attach`, `files_replace`, and `files_delete`
 (when the file was in an artifact). The result shows your own save, and its
 `baseVersion` matches that content, even when someone saved again right after
-you; then a later update with it is refused as `artifact_changed`, and you
-read the artifact again. An `artifacts_update` that only changes the project,
-tags, full width, sharing, or comments saves nothing (`edit: "unchanged"`; a
-sharing request's outcome, including one waiting for approval, comes back in
-`sharing`), returns no `baseVersion`, and never needs one: keep the one you
-have.
+you, so a later update with that `baseVersion` is refused as
+`artifact_changed`. Then read the artifact again.
+
+An `artifacts_update` that only changes `project`, `tags` (or `addTags` and
+`removeTags`), `fullWidth`, `visibility` and `team`, or `comments` saves
+nothing. Its result says `edit: "unchanged"` and has no `baseVersion`. It
+never needs a `baseVersion` either, so keep the one you have. A sharing
+request's outcome, including one that waits for approval, comes back in
+`sharing`.
 
 - Pass that `baseVersion` with every `artifacts_update` and
   `artifacts_restore_version`. Use the one from the content you actually
