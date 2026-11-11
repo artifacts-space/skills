@@ -134,7 +134,7 @@ result: `artifacts_create`, `artifacts_update`, `artifacts_restore_version`,
 (when the file was in an artifact). The result shows your own save, and its
 `baseVersion` matches that content, even when someone saved again right after
 you, so a later update with that `baseVersion` is refused as
-`artifact_changed`. Then read the artifact again.
+`artifact_changed`.
 
 An `artifacts_update` that only changes `project`, `tags` (or `addTags` and
 `removeTags`), `fullWidth`, `visibility` and `team`, or `comments` saves
