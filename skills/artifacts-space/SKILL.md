@@ -125,8 +125,8 @@ this as `editPending`.
 People edit artifacts in the web app while you work, and a person's work wins
 over yours. `artifacts_get` returns a `baseVersion` with the content you read,
 and every save (`artifacts_create`, `artifacts_update`,
-`artifacts_restore_version`, and the `files_*` tools) returns the new one in
-its result.
+`artifacts_restore_version`, `files_create_artifact`, `files_attach`, and
+`files_replace`) returns the new one in its result.
 
 - Pass that `baseVersion` with every `artifacts_update` and
   `artifacts_restore_version`. Use the one from the content you actually
@@ -138,10 +138,11 @@ its result.
   Never resend the same call, and never drop the `baseVersion` to force a
   save. Try this at most twice; if it is still refused, stop and tell the
   person what you wanted to change.
-- `artifact_being_edited` means you sent no `baseVersion` and a person is
-  typing in it right now; their latest words are not saved yet. Wait a
-  minute, then read it with `artifacts_get` and save with its `baseVersion`,
-  or tell the person what you want to change.
+- `artifact_being_edited` comes only when a save sends no `baseVersion`
+  while a person is typing in the artifact; their latest words are not saved
+  yet. A save with a `baseVersion` never gets it. If you see it, read the
+  artifact with `artifacts_get` and save with its `baseVersion`, or wait a
+  minute, or tell the person what you want to change.
 - When your save does land and the person was editing too, their next save
   still wins; your version stays in History (`artifacts_versions`).
 
