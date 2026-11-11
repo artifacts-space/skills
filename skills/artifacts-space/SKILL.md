@@ -133,7 +133,9 @@ Every tool that saves an artifact returns the new one in its result:
 `files_create_artifact`, `files_attach`, `files_replace`, and `files_delete`
 (when the file was in an artifact). The result shows your own save, and its
 `baseVersion` matches that content, even when someone saved again right
-after you.
+after you. An `artifacts_update` that only changes the project, tags, full
+width, sharing, or comments saves nothing (`edit` is "unchanged") and
+returns no `baseVersion`: keep the one you have.
 
 - Pass that `baseVersion` with every `artifacts_update` and
   `artifacts_restore_version`. Use the one from the content you actually
@@ -145,6 +147,11 @@ after you.
   Never resend the same call, and never drop the `baseVersion` to force a
   save. Try this at most twice; if it is still refused, stop and tell the
   person what you wanted to change.
+- A save without a `baseVersion` is refused with `base_version_required`
+  whenever a person saved the artifact last, whatever it changes: you never
+  saw what they wrote. Read the artifact with `artifacts_get`, merge your
+  changes into what you get, and save with its `baseVersion`. Only artifacts
+  that agents saved last take saves without one.
 - `artifact_being_edited` comes only when a save sends no `baseVersion`
   while a person is typing in the artifact; their latest words are not saved
   yet. A save with a `baseVersion` never gets it. If you see it, read the
