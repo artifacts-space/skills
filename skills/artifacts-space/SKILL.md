@@ -101,6 +101,10 @@ To save files (PDFs, images, archives):
    the files to an artifact you can edit. Do this within a day, or the upload
    is deleted.
 
+To put a new draft of a file in its place (same id, links, and embeds), upload
+it the same way, then call `files_replace` with the file id and your upload id.
+The old copy stays in History.
+
 To read an attached file, call `files_get_download_url` and fetch the URL.
 
 ## Update instead of duplicating
