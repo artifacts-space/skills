@@ -133,8 +133,7 @@ result: `artifacts_create`, `artifacts_update`, `artifacts_restore_version`,
 `files_create_artifact`, `files_attach`, `files_replace`, and `files_delete`
 (when the file was in an artifact). The result shows your own save, and its
 `baseVersion` matches that content, even when someone saved again right after
-you, so a later update with that `baseVersion` is refused as
-`artifact_changed`.
+you.
 
 An `artifacts_update` that only changes `project`, `tags` (or `addTags` and
 `removeTags`), `fullWidth`, `visibility` and `team`, or `comments` saves
@@ -158,9 +157,9 @@ request's outcome, including one that waits for approval, comes back in
   artifact itself (`content`, `kind`, `title`, `summary`, `icon`, `theme`,
   `cover`, or any other field it saves): you never saw what they wrote. Read
   the artifact with `artifacts_get`, merge your changes into what you get, and
-  save with its `baseVersion`. If the person is typing right now, you may get
-  `artifact_being_edited` instead (next point). Only artifacts that agents
-  saved last take saves without one.
+  save with its `baseVersion`. If that save changes the `title`, `content`, or
+  `kind` while the person is typing, you get `artifact_being_edited` instead
+  (next point). Only artifacts that agents saved last take saves without one.
 - `artifact_being_edited` comes only when a save sends no `baseVersion` and
   changes the `title`, `content`, or `kind` (format) while a person is typing
   in the artifact; their latest words are not saved yet. A save with a
