@@ -177,8 +177,9 @@ create, check artifacts.space:
    the same title is not a duplicate: ask whether to skip, import it as new,
    or replace that artifact's content with `artifacts_update` (the old content
    stays in its version history). Read it with `artifacts_get` first and pass
-   its `baseVersion`; if the update is refused because it changed, read it
-   again and ask before replacing.
+   its `baseVersion`. If the update is refused because the artifact changed,
+   read it again: replace it only if it is still the one the user picked;
+   otherwise stop and ask.
 
 A re-run finds earlier imports as long as their summary still holds the key.
 

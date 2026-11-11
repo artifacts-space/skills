@@ -111,11 +111,22 @@ To read an attached file, call `files_get_download_url` and fetch the URL.
    with `artifacts_update`. Only the fields you pass change.
 3. Create a new artifact with `artifacts_create` only when nothing fits.
 
+Every save is kept. `artifacts_versions` lists the history of an artifact you
+can edit; pass `version` to read one version's content.
+`artifacts_restore_version` brings an older version back as a new save.
+
+An update result with `edit: "pending"` means the artifact is shared by link or
+in public and a team owner or admin must approve the change. Readers outside
+the team see the last approved version until then. `artifacts_get` reports
+this as `editPending`.
+
 ### Always pass the version you read
 
 People edit artifacts in the web app while you work, and a person's work wins
 over yours. `artifacts_get` returns a `baseVersion` with the content you read,
-and every save returns the new one in its result.
+and every save (`artifacts_create`, `artifacts_update`,
+`artifacts_restore_version`, and the `files_*` tools) returns the new one in
+its result.
 
 - Pass that `baseVersion` with every `artifacts_update` and
   `artifacts_restore_version`. Use the one from the content you actually
@@ -125,21 +136,14 @@ and every save returns the new one in its result.
 - Then read it again with `artifacts_get`, merge your changes into the new
   content (keep what the person wrote), and save with the new `baseVersion`.
   Never resend the same call, and never drop the `baseVersion` to force a
-  save.
-- `artifact_being_edited` means a person is typing in it right now. Read it
-  again and merge, or wait a minute and try again. Tell the person if your
-  change still does not fit.
+  save. Try this at most twice; if it is still refused, stop and tell the
+  person what you wanted to change.
+- `artifact_being_edited` means you sent no `baseVersion` and a person is
+  typing in it right now; their latest words are not saved yet. Wait a
+  minute, then read it with `artifacts_get` and save with its `baseVersion`,
+  or tell the person what you want to change.
 - When your save does land and the person was editing too, their next save
   still wins; your version stays in History (`artifacts_versions`).
-
-Every save is kept. `artifacts_versions` lists the history of an artifact you
-can edit; pass `version` to read one version's content.
-`artifacts_restore_version` brings an older version back as a new save.
-
-An update result with `edit: "pending"` means the artifact is shared by link or
-in public and a team owner or admin must approve the change. Readers outside
-the team see the last approved version until then. `artifacts_get` reports
-this as `editPending`.
 
 ## Read a link without MCP
 
