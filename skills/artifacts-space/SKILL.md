@@ -136,13 +136,13 @@ result: `artifacts_create`, `artifacts_update`, `artifacts_restore_version`,
 you; your next update then gets `artifact_changed` (below). The `files_*`
 tools take no `baseVersion` and are never refused for one.
 
-An `artifacts_update` that changes only metadata (`project`, `tags`,
-`addTags`, `removeTags`, `fullWidth`, `visibility`, `team`, `comments`) saves
-nothing. Its result says `edit: "unchanged"` and has no `baseVersion`. It is
-never refused for a missing `baseVersion` and ignores any you send, so sending
-the one you have is harmless; keep it for your next save. A sharing request's outcome, including one that
-waits for approval, comes back in `sharing`. Any other field, `sessionId` and
-`source` included, makes the update a save.
+An `artifacts_update` that changes only metadata (`project`, `tags`, `addTags`,
+`removeTags`, `fullWidth`, `visibility`, `team`, `comments`) saves nothing. Its
+result says `edit: "unchanged"` and has no `baseVersion`. It is never refused
+for a missing `baseVersion` and ignores any you send, so sending the one you
+have is harmless; keep it for your next save. A sharing request's outcome,
+including one that waits for approval, comes back in `sharing`. Any other
+field, `sessionId` and `source` included, makes the update a save.
 
 - Pass that `baseVersion` with every `artifacts_update` and
   `artifacts_restore_version`. Use the one from the content you actually
