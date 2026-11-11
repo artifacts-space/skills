@@ -155,11 +155,12 @@ request's outcome, including one that waits for approval, comes back in
 - A save without a `baseVersion` is refused with `base_version_required`
   whenever a person saved the artifact last, whatever it changes in the
   artifact itself (`content`, `kind`, `title`, `summary`, `icon`, `theme`,
-  `cover`, or any other field it saves): you never saw what they wrote. Read
-  the artifact with `artifacts_get`, merge your changes into what you get, and
-  save with its `baseVersion`. If that save changes the `title`, `content`, or
-  `kind` while the person is typing, you get `artifact_being_edited` instead
-  (next point). Only artifacts that agents saved last take saves without one.
+  `cover`, or any other field it saves): you never saw what they wrote. When
+  the save without a `baseVersion` changes the `title`, `content`, or `kind`
+  while the person is typing, it gets `artifact_being_edited` instead (next
+  point). Either way, read the artifact with `artifacts_get`, merge your
+  changes into what you get, and save with its `baseVersion`. Only artifacts
+  that agents saved last take saves without one.
 - `artifact_being_edited` comes only when a save sends no `baseVersion` and
   changes the `title`, `content`, or `kind` (format) while a person is typing
   in the artifact; their latest words are not saved yet. A save with a
