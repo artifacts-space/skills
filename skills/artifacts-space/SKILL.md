@@ -128,14 +128,15 @@ this as `editPending`.
 
 People edit artifacts in the web app while you work, and a person's work wins
 over yours. `artifacts_get` returns a `baseVersion` with the content you read.
-Every tool that saves an artifact returns the new one in its result:
-`artifacts_create`, `artifacts_update`, `artifacts_restore_version`,
+Every tool that writes a version of an artifact returns the new one in its
+result: `artifacts_create`, `artifacts_update`, `artifacts_restore_version`,
 `files_create_artifact`, `files_attach`, `files_replace`, and `files_delete`
 (when the file was in an artifact). The result shows your own save, and its
-`baseVersion` matches that content, even when someone saved again right
-after you. An `artifacts_update` that only changes the project, tags, full
-width, sharing, or comments saves nothing (`edit` is "unchanged") and
-returns no `baseVersion`: keep the one you have.
+`baseVersion` matches that content, even when someone saved again right after
+you; then a later update with it is refused as `artifact_changed`, and you
+read the artifact again. An `artifacts_update` that only changes the project,
+tags, full width, sharing, or comments saves nothing (`edit` is "unchanged")
+and returns no `baseVersion`: keep the one you have.
 
 - Pass that `baseVersion` with every `artifacts_update` and
   `artifacts_restore_version`. Use the one from the content you actually
@@ -148,8 +149,10 @@ returns no `baseVersion`: keep the one you have.
   save. Try this at most twice; if it is still refused, stop and tell the
   person what you wanted to change.
 - A save without a `baseVersion` is refused with `base_version_required`
-  whenever a person saved the artifact last, whatever it changes: you never
-  saw what they wrote. Read the artifact with `artifacts_get`, merge your
+  whenever a person saved the artifact last, whatever content or field it
+  changes: you never saw what they wrote. Updates that only change the
+  project, tags, full width, sharing, or comments save nothing and never
+  need one. Read the artifact with `artifacts_get`, merge your
   changes into what you get, and save with its `baseVersion`. Only artifacts
   that agents saved last take saves without one.
 - `artifact_being_edited` comes only when a save sends no `baseVersion`
