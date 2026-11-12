@@ -19,4 +19,12 @@ file; edit `AGENTS.md`, never replace the symlink.
   Python standard library only, no network, read-only on the user's data.
   Test it in `tests/` with synthetic fixtures, never real user data, and run
   `node --test "tests/**/*.test.mjs"`. CI runs the tests too.
+- `plugins/artifacts-space/` is the plugin for the OpenAI, Claude, and Cursor
+  directories; `gemini-extension.json` is the Gemini CLI extension. The
+  plugin's `skills/artifacts-space/` must be an exact copy of
+  `skills/artifacts-space/` (no symlinks; the directories reject them), so
+  after you change the skill run
+  `cp -R skills/artifacts-space plugins/artifacts-space/skills/`. Raise
+  `version` in every manifest together. `node scripts/check-skills.mjs`
+  checks all of this; add `--release` before a directory submission.
 - Commit messages are conventional: `feat:`, `fix:`, `docs:`, `chore:`.
