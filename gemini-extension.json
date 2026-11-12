@@ -1,0 +1,10 @@
+{
+  "name": "artifacts-space",
+  "version": "1.0.0",
+  "description": "Save plans, specs, reports, and notes as artifacts your team can read, comment on, and share, with full version history.",
+  "mcpServers": {
+    "artifacts": {
+      "httpUrl": "https://artifacts.space/api/mcp"
+    }
+  }
+}
