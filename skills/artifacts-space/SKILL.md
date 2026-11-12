@@ -127,10 +127,22 @@ this as `editPending`.
 ### Always pass the version you read
 
 People edit artifacts in the web app while you work, and a person's work wins
-over yours. `artifacts_get` returns a `baseVersion` with the content you read,
-and every save (`artifacts_create`, `artifacts_update`,
-`artifacts_restore_version`, `files_create_artifact`, `files_attach`, and
-`files_replace`) returns the new one in its result.
+over yours. `artifacts_get` returns a `baseVersion` with the content you read.
+Every tool that writes a version of an artifact returns the new one in its
+result: `artifacts_create`, `artifacts_update`, `artifacts_restore_version`,
+`files_create_artifact`, `files_attach`, `files_replace`, and `files_delete`
+(when the file was in an artifact). The result shows your own save, and its
+`baseVersion` matches that content, even when someone saved again right after
+you; your next update then gets `artifact_changed` (below). The `files_*`
+tools take no `baseVersion` and are never refused for one.
+
+An `artifacts_update` that changes only metadata (`project`, `tags`, `addTags`,
+`removeTags`, `fullWidth`, `visibility`, `team`, `comments`) saves nothing. Its
+result says `edit: "unchanged"` and has no `baseVersion`. It is never refused
+for a missing `baseVersion` and ignores any you send, so sending the one you
+have is harmless; keep it for your next save. A sharing request's outcome,
+including one that waits for approval, comes back in `sharing`. Any other
+field, `sessionId` and `source` included, makes the update a save.
 
 - Pass that `baseVersion` with every `artifacts_update` and
   `artifacts_restore_version`. Use the one from the content you actually
@@ -142,11 +154,21 @@ and every save (`artifacts_create`, `artifacts_update`,
   Never resend the same call, and never drop the `baseVersion` to force a
   save. Try this at most twice; if it is still refused, stop and tell the
   person what you wanted to change.
-- `artifact_being_edited` comes only when a save sends no `baseVersion`
-  while a person is typing in the artifact; their latest words are not saved
-  yet. A save with a `baseVersion` never gets it. If you see it, read the
-  artifact with `artifacts_get` and save with its `baseVersion`, or wait a
-  minute, or tell the person what you want to change.
+- An `artifacts_update` or `artifacts_restore_version` that sends no
+  `baseVersion` is refused with `base_version_required` whenever a person saved
+  the artifact last, whatever it changes in the artifact itself (`content`,
+  `kind`, `title`, `summary`, `icon`, `theme`, `cover`, or any other field it
+  saves): you never saw what they wrote. If the person is typing, it may get
+  `artifact_being_edited` instead (next point). Either way, read the artifact
+  with `artifacts_get`, merge your changes into what you get, and save with
+  its `baseVersion`. Only artifacts that agents saved last take saves without
+  one.
+- `artifact_being_edited` comes only when a save sends no `baseVersion` and
+  changes the `title`, `content`, or `kind` (format) while a person is typing
+  in the artifact; their latest words are not saved yet. A save with a
+  `baseVersion` never gets it. If you see it, read the artifact with
+  `artifacts_get` and save with its `baseVersion`, or wait a minute, or tell
+  the person what you want to change.
 - When your save does land and the person was editing too, their next save
   still wins; your version stays in History (`artifacts_versions`).
 
