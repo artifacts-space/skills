@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 // Checks every skills/<name>/SKILL.md: YAML frontmatter with `name` and
-// `description`, and `name` equal to its folder. Plain Node, no dependencies.
-// Usage: node scripts/check-skills.mjs
+// `description`, and `name` equal to its folder. Then checks the plugin
+// package (scripts/plugin-rules.mjs). Plain Node, no dependencies.
+// Usage: node scripts/check-skills.mjs [--release]
+// --release also fails while the plugin's demo video URL is a placeholder.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkPluginPackage, PLUGIN_DIR } from "./plugin-rules.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const skillsDir = join(root, "skills");
@@ -67,12 +70,14 @@ function main() {
     : [];
   if (folders.length === 0) problems.push("no skills found under skills/");
   for (const folder of folders) problems.push(...checkSkill(folder));
+  problems.push(...checkPluginPackage(root, { release: process.argv.includes("--release") }));
 
   if (problems.length > 0) {
     for (const problem of problems) console.error(`✗ ${problem}`);
     process.exit(1);
   }
   console.log(`✓ ${folders.length} skill${folders.length === 1 ? "" : "s"} valid: ${folders.join(", ")}`);
+  console.log(`✓ plugin package valid: ${PLUGIN_DIR}, gemini-extension.json, .cursor-plugin/marketplace.json${process.argv.includes("--release") ? " (release)" : ""}`);
 }
 
 main();

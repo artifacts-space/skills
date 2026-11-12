@@ -1,0 +1,97 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "artifacts-space",
+  "version": "1.0.0",
+  "description": "Save plans, specs, reports, and notes as artifacts your team can read, comment on, and share, with full version history.",
+  "author": {
+    "name": "Webrenew LLC",
+    "email": "support@artifacts.space",
+    "url": "https://artifacts.space"
+  },
+  "homepage": "https://artifacts.space",
+  "repository": "https://github.com/artifacts-space/skills",
+  "license": "MIT",
+  "keywords": ["docs", "notes", "specs", "reports", "collaboration"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "artifacts.space",
+        "shortDescription": "Save and share agent work",
+        "longDescription": "artifacts.space keeps the work you make in chat in one place your team can use. Ask for a plan, a spec, a research summary, or a status report, and it is saved as an artifact you can open in the browser, share with your team or by link, and find again in any later conversation.\n\nWhat you can do:\n- Save docs, plans, specs, reports, notes, pages, and dashboards as artifacts.\n- Find earlier work by title, content, project, or tag, and read it in full.\n- Update an artifact in place. Every save keeps a version, and you can restore an earlier one.\n- Read the comments and @mentions waiting for you, and reply.\n- Attach files and organize work with projects, tags, and themes.\n\nWho it is for: people who want work from their conversations kept, shared, and reviewed, alone or with a team.\n\nLimits: artifacts are private until you share them. Sharing outside a team can need a team owner's or admin's approval, and the plugin can ask for sharing but never approve it. A person's edit always wins over the plugin's. You choose read-only or full access when you connect, and you can revoke access at any time on the Connections page.",
+        "developerName": "Webrenew LLC",
+        "category": "Productivity",
+        "capabilities": ["Save artifacts", "Find and read artifacts", "Edit with version history", "Comments and inbox", "Attach files"],
+        "websiteURL": "https://artifacts.space",
+        "supportURL": "https://artifacts.space/support",
+        "privacyPolicyURL": "https://artifacts.space/privacy",
+        "termsOfServiceURL": "https://artifacts.space/terms",
+        "defaultPrompt": [
+          "Save this plan as an artifact in my Launch project.",
+          "Find my artifacts about onboarding and summarize the newest one.",
+          "What comments are waiting for me on artifacts.space?"
+        ],
+        "brandColor": "#0051F0",
+        "brandColorDark": "#88C5FB",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/logo.png"
+      },
+      "onboardingSkill": "./skills/artifacts-space/SKILL.md",
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Save a new artifact in a project",
+              "prompt": "Save this as an artifact in my Launch project: \"Launch plan: ship beta on Friday, announce Monday.\"",
+              "tools_triggered": "projects_list, artifacts_list, artifacts_create",
+              "expected_behavior": "A new private artifact about the launch plan, in project Launch, with a link to open it."
+            },
+            {
+              "description": "Find and summarize",
+              "prompt": "Find my artifacts about onboarding and summarize the newest one.",
+              "tools_triggered": "artifacts_list, artifacts_get",
+              "expected_behavior": "Lists matching artifacts from the test account and summarizes the newest, with its link."
+            },
+            {
+              "description": "Edit one line",
+              "prompt": "In the \"Release checklist\" artifact, mark the database step as done.",
+              "tools_triggered": "artifacts_list, artifacts_get, artifacts_update",
+              "expected_behavior": "Changes only that line and reports the edit as saved; a new version appears in History."
+            },
+            {
+              "description": "Answer a comment",
+              "prompt": "What comments are waiting for me? Reply \"Looks good\" to the one on the API spec.",
+              "tools_triggered": "inbox_list, comments_list, comment_create",
+              "expected_behavior": "Lists unread comments and mentions, then posts the reply in the API spec thread."
+            },
+            {
+              "description": "Restore a version",
+              "prompt": "Show the version history of \"Q4 roadmap\" and restore the previous version.",
+              "tools_triggered": "artifacts_list, artifacts_versions, artifacts_restore_version",
+              "expected_behavior": "Lists versions with who saved them and restores the chosen one as a new save."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Agents cannot approve; a team owner or admin approves in the web app. Expected: explains this and calls no write tool.",
+              "prompt": "Approve the pending edit on the team roadmap."
+            },
+            {
+              "description": "No email tool. Expected: says it cannot send email and offers the artifact's link or sharing.",
+              "prompt": "Email the launch plan to my manager."
+            },
+            {
+              "description": "The account is not in that team. Expected: reports the team is not available and shows nothing from it.",
+              "prompt": "Show me the artifacts of the \"acme-finance\" team."
+            }
+          ]
+        },
+        "demo_recording_url": "REPLACE_WITH_DEMO_VIDEO_URL",
+        "commerce": false,
+        "commerce_description": "artifacts.space sells nothing through the plugin and processes no payments."
+      },
+      "publication": {
+        "release_notes": "First release: save, find, read, and update artifacts; version history and restore; comments and inbox; file attachments; projects, tags, and themes."
+      }
+    }
+  }
+}

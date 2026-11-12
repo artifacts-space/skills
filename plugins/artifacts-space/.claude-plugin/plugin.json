@@ -1,0 +1,20 @@
+{
+  "name": "artifacts-space",
+  "displayName": "artifacts.space",
+  "version": "1.0.0",
+  "description": "Save plans, specs, reports, and notes as artifacts your team can read, comment on, and share, with full version history.",
+  "author": {
+    "name": "Webrenew LLC",
+    "email": "support@artifacts.space",
+    "url": "https://artifacts.space"
+  },
+  "homepage": "https://artifacts.space",
+  "repository": "https://github.com/artifacts-space/skills",
+  "license": "MIT",
+  "keywords": ["docs", "notes", "specs", "reports", "collaboration"],
+  "icon": "./assets/logo.png",
+  "documentationUrl": "https://artifacts.space/docs",
+  "supportUrl": "https://artifacts.space/support",
+  "privacyPolicyUrl": "https://artifacts.space/privacy",
+  "termsOfServiceUrl": "https://artifacts.space/terms"
+}

@@ -16,6 +16,29 @@ The [skills](https://skills.sh) CLI installs the skill for the agents it finds
 on your machine: Claude Code, Cursor, Codex, OpenCode, GitHub Copilot, Gemini
 CLI, Windsurf, and many more. Add `-g` to install it for every project.
 
+## Plugin
+
+The plugin in [`plugins/artifacts-space`](plugins/artifacts-space) gives you
+both halves in one install: the `artifacts-space` skill and the connection to
+the MCP server. You sign in with OAuth in your browser; the plugin holds no
+token.
+
+It is not in any app's directory yet. Once it is listed, you install it from:
+
+| App | Where |
+| --- | --- |
+| ChatGPT and Codex | The plugin directory (in Codex, `/plugins`) |
+| Claude, Claude Desktop, and Claude Code | Claude's directory (in Claude Code, `/plugin`) |
+| Cursor | The Cursor Marketplace, under Customize |
+| Gemini CLI | The extension gallery, or `gemini extensions install https://github.com/artifacts-space/skills` |
+
+Until then, `npx skills add` above and the MCP server below give you the same
+skill and tools.
+
+Maintainers: `node scripts/check-skills.mjs` checks the plugin too. Before you
+send it to a directory, run it with `--release`, and build the OpenAI upload
+with `node scripts/build-openai-zip.mjs` (it writes to `dist/`).
+
 ## Connect the MCP server
 
 The skills tell your agent what to do. The MCP server lets it do it.

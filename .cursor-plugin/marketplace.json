@@ -1,0 +1,19 @@
+{
+  "name": "artifacts-space",
+  "owner": {
+    "name": "Webrenew LLC",
+    "email": "support@artifacts.space"
+  },
+  "metadata": {
+    "description": "The artifacts.space plugin for Cursor."
+  },
+  "plugins": [
+    {
+      "name": "artifacts-space",
+      "source": "plugins/artifacts-space",
+      "description": "Save plans, specs, reports, and notes as artifacts your team can read, comment on, and share, with full version history.",
+      "version": "1.0.0",
+      "logo": "assets/logo.png"
+    }
+  ]
+}
