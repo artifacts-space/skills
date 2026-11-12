@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "artifacts": {
+      "type": "http",
+      "url": "https://artifacts.space/api/mcp"
+    }
+  }
+}
