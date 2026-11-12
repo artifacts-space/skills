@@ -54,6 +54,11 @@ function stage(stageDir, draft) {
   // registered OAuth client") show exactly this: the Agent Plugins $schema and
   // extensions["com.openai"].auth in one mcp.json. The schema also requires
   // "$schema", so dropping it would break the schema a second way.
+  // Known client bug: some Codex and ChatGPT builds reject the server's
+  // `extensions` key ("unknown field `extensions`") and drop the MCP server
+  // (github.com/openai/codex/issues/53658, open). The ZIP still uploads, but
+  // the plugin then shows no tools. Before a submission, install the release
+  // ZIP in a current client and check that the server loads.
   for (const server of Object.values(mcp.mcpServers)) server.extensions = { "com.openai": { auth: OPENAI_AUTH } };
   writeFileSync(mcpPath, `${JSON.stringify(mcp, null, 2)}\n`);
   return manifest.version;
