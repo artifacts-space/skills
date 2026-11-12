@@ -349,7 +349,8 @@ describe("OpenAI ZIP build", { skip: hasZip ? false : "zip is not installed" }, 
     const out = mkdtempSync(join(tmpdir(), "openai-zip-"));
     made.push(out);
     execFileSync(process.execPath, [buildScript, "--draft", "--out", out], { encoding: "utf8" });
-    const zip = join(out, "artifacts-space-openai-1.0.0-draft.zip");
+    const { version } = readJson(join(repo, PLUGIN_DIR, "plugin.json"));
+    const zip = join(out, `artifacts-space-openai-${version}-draft.zip`);
     const listing = execFileSync("unzip", ["-Z1", zip], { encoding: "utf8" }).split("\n").filter(Boolean);
     for (const entry of ["plugin.json", "mcp.json", "README.md", "LICENSE", "skills/artifacts-space/SKILL.md", "assets/logo.png", "assets/icon.png"]) {
       assert.ok(listing.includes(entry), `${entry} is in the ZIP`);
@@ -359,16 +360,9 @@ describe("OpenAI ZIP build", { skip: hasZip ? false : "zip is not installed" }, 
     assert.equal("demo_recording_url" in manifest.extensions["com.openai"].review, false);
     const mcp = JSON.parse(execFileSync("unzip", ["-p", zip, "mcp.json"], { encoding: "utf8" }));
     assert.deepEqual(mcp.mcpServers.artifacts.extensions, { "com.openai": { auth: { type: "oauth", client: { mode: "cimd" } } } });
-  });
-
-  it("should keep the Agent Plugins $schema in the packaged mcp.json next to the OpenAI sign-in setting", () => {
-    const out = mkdtempSync(join(tmpdir(), "openai-zip-"));
-    made.push(out);
-    execFileSync(process.execPath, [buildScript, "--draft", "--out", out], { encoding: "utf8" });
-    const mcp = JSON.parse(execFileSync("unzip", ["-p", join(out, "artifacts-space-openai-1.0.0-draft.zip"), "mcp.json"], { encoding: "utf8" }));
+    // The Agent Plugins $schema stays next to the OpenAI sign-in setting.
     assert.equal(mcp.$schema, readJson(join(repo, PLUGIN_DIR, "mcp.json")).$schema);
     assert.equal(mcp.mcpServers.artifacts.type, "streamable-http");
-    assert.equal(mcp.mcpServers.artifacts.extensions["com.openai"].auth.type, "oauth");
   });
 
   it("should build a release ZIP that keeps the demo video URL and has no -draft in its name", () => {
@@ -384,6 +378,8 @@ describe("OpenAI ZIP build", { skip: hasZip ? false : "zip is not installed" }, 
     const stdout = execFileSync(process.execPath, [join(root, "scripts", "build-openai-zip.mjs"), "--out", out], { encoding: "utf8" });
     assert.deepEqual(readdirSync(out), [`artifacts-space-openai-${version}.zip`]);
     assert.doesNotMatch(stdout, /draft/);
+    assert.match(stdout, /install this ZIP in a current Codex or ChatGPT build and check that the artifacts MCP server loads/);
+    assert.match(stdout, /https:\/\/github\.com\/openai\/codex\/issues\/53658/);
     const manifest = JSON.parse(execFileSync("unzip", ["-p", join(out, `artifacts-space-openai-${version}.zip`), "plugin.json"], { encoding: "utf8" }));
     assert.equal(openAi(manifest).review.demo_recording_url, demoUrl);
   });

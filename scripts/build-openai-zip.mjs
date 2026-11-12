@@ -24,6 +24,9 @@ import { checkPluginPackage, DEMO_PLACEHOLDER, PLUGIN_DIR } from "./plugin-rules
 const root = fileURLToPath(new URL("..", import.meta.url));
 const LEFT_OUT = new Set([".claude-plugin", ".mcp.json", ".DS_Store"]);
 const OPENAI_AUTH = { type: "oauth", client: { mode: "cimd" } };
+/** Printed after every build: the check the person submitting must run, because of the client bug noted in stage(). */
+const INSTALL_CHECK =
+  "Before you submit: install this ZIP in a current Codex or ChatGPT build and check that the artifacts MCP server loads and lists its tools (some builds drop it: https://github.com/openai/codex/issues/53658).";
 
 /**
  * Reads `--draft` and `--out <folder>` from the command line.
@@ -54,11 +57,11 @@ function stage(stageDir, draft) {
   // registered OAuth client") show exactly this: the Agent Plugins $schema and
   // extensions["com.openai"].auth in one mcp.json. The schema also requires
   // "$schema", so dropping it would break the schema a second way.
-  // Known client bug: some Codex and ChatGPT builds reject the server's
-  // `extensions` key ("unknown field `extensions`") and drop the MCP server
-  // (github.com/openai/codex/issues/53658, open). The ZIP still uploads, but
-  // the plugin then shows no tools. Before a submission, install the release
-  // ZIP in a current client and check that the server loads.
+  // Known client bug, open when checked on 2026-11-12: some Codex and ChatGPT
+  // builds reject the server's `extensions` key ("unknown field `extensions`")
+  // and drop the MCP server (https://github.com/openai/codex/issues/53658).
+  // The ZIP still uploads, but the plugin then shows no tools, so main()
+  // prints INSTALL_CHECK after every build.
   for (const server of Object.values(mcp.mcpServers)) server.extensions = { "com.openai": { auth: OPENAI_AUTH } };
   writeFileSync(mcpPath, `${JSON.stringify(mcp, null, 2)}\n`);
   return manifest.version;
@@ -85,6 +88,7 @@ function main() {
     rmSync(zipPath, { force: true });
     execFileSync("zip", ["-r", "-X", "-q", zipPath, "."], { cwd: stageDir, stdio: "inherit" });
     console.log(`✓ ${zipPath}${draft ? " (draft: no demo video URL)" : ""}`);
+    console.log(INSTALL_CHECK);
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
