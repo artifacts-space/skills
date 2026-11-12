@@ -25,12 +25,16 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const LEFT_OUT = new Set([".claude-plugin", ".mcp.json", ".DS_Store"]);
 const OPENAI_AUTH = { type: "oauth", client: { mode: "cimd" } };
 
-/** Reads `--draft` and `--out <folder>` from the command line. */
+/**
+ * Reads `--draft` and `--out <folder>` from the command line.
+ * Returns `{ error }` when `--out` has no folder after it, or a flag in its place.
+ */
 function parseArgs(argv) {
   const draft = argv.includes("--draft");
   const outIndex = argv.indexOf("--out");
-  const out = outIndex >= 0 ? argv[outIndex + 1] : join(root, "dist");
-  if (!out) throw new Error("--out needs a folder");
+  if (outIndex < 0) return { draft, out: join(root, "dist") };
+  const out = argv[outIndex + 1];
+  if (!out || out.startsWith("--")) return { error: `--out needs a folder after it, as in --out dist/ (got ${out ? `"${out}"` : "nothing"})` };
   return { draft, out: resolve(out) };
 }
 
@@ -44,13 +48,23 @@ function stage(stageDir, draft) {
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   const mcpPath = join(stageDir, "mcp.json");
   const mcp = JSON.parse(readFileSync(mcpPath, "utf8"));
+  // The packaged file keeps "$schema" although the Agent Plugins MCP schema
+  // closes each server to type/url/headers, so `extensions` is outside it.
+  // OpenAI's plugin docs (developers.openai.com/codex/plugins/build, "Use a
+  // registered OAuth client") show exactly this: the Agent Plugins $schema and
+  // extensions["com.openai"].auth in one mcp.json. The schema also requires
+  // "$schema", so dropping it would break the schema a second way.
   for (const server of Object.values(mcp.mcpServers)) server.extensions = { "com.openai": { auth: OPENAI_AUTH } };
   writeFileSync(mcpPath, `${JSON.stringify(mcp, null, 2)}\n`);
   return manifest.version;
 }
 
 function main() {
-  const { draft, out } = parseArgs(process.argv.slice(2));
+  const { draft, out, error } = parseArgs(process.argv.slice(2));
+  if (error) {
+    console.error(`✗ ${error}`);
+    process.exit(1);
+  }
   const problems = checkPluginPackage(root, { release: !draft });
   if (problems.length > 0) {
     for (const problem of problems) console.error(`✗ ${problem}`);

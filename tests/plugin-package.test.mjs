@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -360,4 +360,45 @@ describe("OpenAI ZIP build", { skip: hasZip ? false : "zip is not installed" }, 
     const mcp = JSON.parse(execFileSync("unzip", ["-p", zip, "mcp.json"], { encoding: "utf8" }));
     assert.deepEqual(mcp.mcpServers.artifacts.extensions, { "com.openai": { auth: { type: "oauth", client: { mode: "cimd" } } } });
   });
+
+  it("should keep the Agent Plugins $schema in the packaged mcp.json next to the OpenAI sign-in setting", () => {
+    const out = mkdtempSync(join(tmpdir(), "openai-zip-"));
+    made.push(out);
+    execFileSync(process.execPath, [buildScript, "--draft", "--out", out], { encoding: "utf8" });
+    const mcp = JSON.parse(execFileSync("unzip", ["-p", join(out, "artifacts-space-openai-1.0.0-draft.zip"), "mcp.json"], { encoding: "utf8" }));
+    assert.equal(mcp.$schema, readJson(join(repo, PLUGIN_DIR, "mcp.json")).$schema);
+    assert.equal(mcp.mcpServers.artifacts.type, "streamable-http");
+    assert.equal(mcp.mcpServers.artifacts.extensions["com.openai"].auth.type, "oauth");
+  });
+
+  it("should build a release ZIP that keeps the demo video URL and has no -draft in its name", () => {
+    const root = fixture();
+    cpSync(join(repo, "scripts"), join(root, "scripts"), { recursive: true });
+    const demoUrl = "https://videos.example.com/artifacts-space/plugin-demo.mp4";
+    editJson(plugin(root, "plugin.json"), (json) => {
+      openAi(json).review.demo_recording_url = demoUrl;
+    });
+    const { version } = readJson(plugin(root, "plugin.json"));
+    const out = mkdtempSync(join(tmpdir(), "openai-zip-"));
+    made.push(out);
+    const stdout = execFileSync(process.execPath, [join(root, "scripts", "build-openai-zip.mjs"), "--out", out], { encoding: "utf8" });
+    assert.deepEqual(readdirSync(out), [`artifacts-space-openai-${version}.zip`]);
+    assert.doesNotMatch(stdout, /draft/);
+    const manifest = JSON.parse(execFileSync("unzip", ["-p", join(out, `artifacts-space-openai-${version}.zip`), "plugin.json"], { encoding: "utf8" }));
+    assert.equal(openAi(manifest).review.demo_recording_url, demoUrl);
+  });
+
+  for (const [label, args] of [
+    ["is followed by another flag", ["--out", "--draft"]],
+    ["has no folder after it", ["--draft", "--out"]],
+  ]) {
+    it(`should refuse to build when --out ${label}`, () => {
+      const cwd = mkdtempSync(join(tmpdir(), "openai-zip-cwd-"));
+      made.push(cwd);
+      const result = spawnSync(process.execPath, [buildScript, ...args], { cwd, encoding: "utf8" });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /--out needs a folder/);
+      assert.deepEqual(readdirSync(cwd), []);
+    });
+  }
 });
