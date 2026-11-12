@@ -4,10 +4,12 @@
 // build while the demo video URL is still the placeholder.
 //
 // The ZIP holds the plugin's files at its root, without the Claude manifest
-// (.claude-plugin/) and the Claude MCP file (.mcp.json). Its mcp.json also
-// declares OAuth with a Client ID Metadata Document, as OpenAI's MCP
-// authentication reference describes; the repository copy stays plain so it
-// matches the Agent Plugins schema that Cursor checks.
+// (.claude-plugin/) and the Claude MCP file (.mcp.json). Its mcp.json is the
+// repository's file byte for byte, with no sign-in settings: a current Codex
+// build drops a server whose mcp.json carries fields outside the Agent Plugins
+// schema (such as extensions["com.openai"].auth), and finds OAuth on its own
+// from the server's WWW-Authenticate header. Upstream issue, still open on
+// 2026-11-12: https://github.com/openai/codex/issues/53658
 //
 // Usage: node scripts/build-openai-zip.mjs [--draft] [--out <folder>]
 //   --draft  build before the demo video exists; leaves demo_recording_url out
@@ -23,10 +25,8 @@ import { checkPluginPackage, DEMO_PLACEHOLDER, PLUGIN_DIR } from "./plugin-rules
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const LEFT_OUT = new Set([".claude-plugin", ".mcp.json", ".DS_Store"]);
-const OPENAI_AUTH = { type: "oauth", client: { mode: "cimd" } };
-/** Printed after every build: the check the person submitting must run, because of the client bug noted in stage(). */
-const INSTALL_CHECK =
-  "Before you submit: install this ZIP in a current Codex or ChatGPT build and check that the artifacts MCP server loads and lists its tools (some builds drop it: https://github.com/openai/codex/issues/53658).";
+/** Printed after every build: the check to run before a submission. */
+const INSTALL_CHECK = "Before you submit: install this ZIP in a current Codex or ChatGPT build and check that the artifacts MCP server loads, signs in, and lists its tools.";
 
 /**
  * Reads `--draft` and `--out <folder>` from the command line.
@@ -41,7 +41,7 @@ function parseArgs(argv) {
   return { draft, out: resolve(out) };
 }
 
-/** Copies the plugin into a staging folder and writes the OpenAI-only changes. */
+/** Copies the plugin into a staging folder; only plugin.json changes, and only for a draft. */
 function stage(stageDir, draft) {
   cpSync(join(root, PLUGIN_DIR), stageDir, { recursive: true, filter: (source) => !LEFT_OUT.has(basename(source)) });
   const manifestPath = join(stageDir, "plugin.json");
@@ -49,21 +49,6 @@ function stage(stageDir, draft) {
   const review = manifest.extensions["com.openai"].review;
   if (draft && review.demo_recording_url === DEMO_PLACEHOLDER) delete review.demo_recording_url;
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  const mcpPath = join(stageDir, "mcp.json");
-  const mcp = JSON.parse(readFileSync(mcpPath, "utf8"));
-  // The packaged file keeps "$schema" although the Agent Plugins MCP schema
-  // closes each server to type/url/headers, so `extensions` is outside it.
-  // OpenAI's plugin docs (developers.openai.com/codex/plugins/build, "Use a
-  // registered OAuth client") show exactly this: the Agent Plugins $schema and
-  // extensions["com.openai"].auth in one mcp.json. The schema also requires
-  // "$schema", so dropping it would break the schema a second way.
-  // Known client bug, open when checked on 2026-11-12: some Codex and ChatGPT
-  // builds reject the server's `extensions` key ("unknown field `extensions`")
-  // and drop the MCP server (https://github.com/openai/codex/issues/53658).
-  // The ZIP still uploads, but the plugin then shows no tools, so main()
-  // prints INSTALL_CHECK after every build.
-  for (const server of Object.values(mcp.mcpServers)) server.extensions = { "com.openai": { auth: OPENAI_AUTH } };
-  writeFileSync(mcpPath, `${JSON.stringify(mcp, null, 2)}\n`);
   return manifest.version;
 }
 

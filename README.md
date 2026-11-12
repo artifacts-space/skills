@@ -37,7 +37,11 @@ skill and tools.
 
 Maintainers: `node scripts/check-skills.mjs` checks the plugin too. Before you
 send it to a directory, run it with `--release`, and build the OpenAI upload
-with `node scripts/build-openai-zip.mjs` (it writes to `dist/`).
+with `node scripts/build-openai-zip.mjs` (it writes to `dist/`). The upload's
+`mcp.json` is the plugin's file unchanged, with no sign-in settings: a current
+Codex build drops a server whose `mcp.json` carries fields outside the schema,
+and it finds OAuth from the server on its own
+([openai/codex#53658](https://github.com/openai/codex/issues/53658)).
 
 ## Connect the MCP server
 

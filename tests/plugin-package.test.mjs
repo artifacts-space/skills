@@ -358,11 +358,20 @@ describe("OpenAI ZIP build", { skip: hasZip ? false : "zip is not installed" }, 
     assert.ok(!listing.some((entry) => entry.startsWith(".claude-plugin") || entry === ".mcp.json"));
     const manifest = JSON.parse(execFileSync("unzip", ["-p", zip, "plugin.json"], { encoding: "utf8" }));
     assert.equal("demo_recording_url" in manifest.extensions["com.openai"].review, false);
-    const mcp = JSON.parse(execFileSync("unzip", ["-p", zip, "mcp.json"], { encoding: "utf8" }));
-    assert.deepEqual(mcp.mcpServers.artifacts.extensions, { "com.openai": { auth: { type: "oauth", client: { mode: "cimd" } } } });
-    // The Agent Plugins $schema stays next to the OpenAI sign-in setting.
-    assert.equal(mcp.$schema, readJson(join(repo, PLUGIN_DIR, "mcp.json")).$schema);
-    assert.equal(mcp.mcpServers.artifacts.type, "streamable-http");
+  });
+
+  it("should package the repository's mcp.json byte for byte, with no extensions key", () => {
+    const out = mkdtempSync(join(tmpdir(), "openai-zip-"));
+    made.push(out);
+    execFileSync(process.execPath, [buildScript, "--draft", "--out", out], { encoding: "utf8" });
+    const { version } = readJson(join(repo, PLUGIN_DIR, "plugin.json"));
+    const packaged = execFileSync("unzip", ["-p", join(out, `artifacts-space-openai-${version}-draft.zip`), "mcp.json"]);
+    assert.ok(packaged.equals(readFileSync(join(repo, PLUGIN_DIR, "mcp.json"))), "packaged mcp.json equals the repository's");
+    assert.doesNotMatch(packaged.toString("utf8"), /"extensions"/);
+    // The packaged file passes the same rules as the repository copy.
+    const root = fixture();
+    writeFileSync(plugin(root, "mcp.json"), packaged);
+    assert.deepEqual(checkPluginPackage(root), []);
   });
 
   it("should build a release ZIP that keeps the demo video URL and has no -draft in its name", () => {
@@ -379,7 +388,6 @@ describe("OpenAI ZIP build", { skip: hasZip ? false : "zip is not installed" }, 
     assert.deepEqual(readdirSync(out), [`artifacts-space-openai-${version}.zip`]);
     assert.doesNotMatch(stdout, /draft/);
     assert.match(stdout, /install this ZIP in a current Codex or ChatGPT build and check that the artifacts MCP server loads/);
-    assert.match(stdout, /https:\/\/github\.com\/openai\/codex\/issues\/53658/);
     const manifest = JSON.parse(execFileSync("unzip", ["-p", join(out, `artifacts-space-openai-${version}.zip`), "plugin.json"], { encoding: "utf8" }));
     assert.equal(openAi(manifest).review.demo_recording_url, demoUrl);
   });
