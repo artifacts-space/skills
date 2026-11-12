@@ -1,0 +1,3 @@
+# Built plugin uploads (scripts/build-openai-zip.mjs)
+dist/
+.DS_Store
