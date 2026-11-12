@@ -27,4 +27,9 @@ file; edit `AGENTS.md`, never replace the symlink.
   `cp -R skills/artifacts-space plugins/artifacts-space/skills/`. Raise
   `version` in every manifest together. `node scripts/check-skills.mjs`
   checks all of this; add `--release` before a directory submission.
+- `node scripts/build-openai-zip.mjs` builds the OpenAI upload. It leaves out
+  the Claude files and ships `mcp.json` unchanged. Add no sign-in settings or
+  other fields outside the Agent Plugins schema: a current Codex build drops
+  such a server, and it finds OAuth from the server on its own
+  (openai/codex#53658).
 - Commit messages are conventional: `feat:`, `fix:`, `docs:`, `chore:`.
